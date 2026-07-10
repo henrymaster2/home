@@ -67,19 +67,20 @@ defmodule HomeWeb.Admin.DashboardLive do
 
   @impl true
   def handle_event("save_property", %{"property" => params}, socket) do
-    # 1. Consume the uploaded images and stream them directly to Cloudinary
+    # 1. Consume the uploaded images and return raw URL strings directly
     uploaded_urls =
       consume_uploaded_entries(socket, :property_images, fn %{path: path}, _entry ->
         case upload_to_cloudinary(path) do
-          {:ok, url} -> {:ok, url}
-          {:error, reason} -> {:postpone, reason}
+          {:ok, url} -> url
+          {:error, _reason} -> nil
         end
       end)
+      |> Enum.filter(& &1)
 
     # Fallback placeholder if no images were attached
     image_urls = if uploaded_urls == [], do: ["https://images.unsplash.com/photo-1564013799919-ab600027ffc6?w=600"], else: uploaded_urls
 
-    # 2. Build the property changeset from form params
+    # 2. Build the property changeset from form params safely
     property_changeset = Property.changeset(%Property{}, %{
       title: params["title"],
       location: params["location"],
@@ -90,10 +91,10 @@ defmodule HomeWeb.Admin.DashboardLive do
       tv: params["tv"] == "true",
       music_system: params["music_system"] == "true",
       status: params["status"] || "Available",
-      unavailable_until: if(params["status"] != "Available" and params["unavailable_until"] != "", do: params["unavailable_until"], else: nil)
+      unavailable_until: if(params["status"] != "Available" and Map.get(params, "unavailable_until", "") != "", do: params["unavailable_until"], else: nil)
     })
 
-    # 3. Open an atomic database transaction to safeguard data integrity
+    # 3. Open an atomic database transaction
     transaction_result = 
       Repo.transaction(fn ->
         with {:ok, saved_property} <- Repo.insert(property_changeset) do
@@ -471,25 +472,22 @@ defmodule HomeWeb.Admin.DashboardLive do
     url = "https://api.cloudinary.com/v1_1/#{cloud_name}/image/upload"
     boundary = "----PhoenixLiveViewUploadBoundary#{timestamp}"
     
-    # Erlang HTTP client configuration requires explicit charlists for configurations
     url_cl = String.to_charlist(url)
     content_type_cl = String.to_charlist("multipart/form-data; boundary=#{boundary}")
     headers_cl = [{"connection", "close"}]
     
-    body = 
-      ["file", "api_key", "timestamp", "signature"]
-      |> Enum.map_join(fn
-        "file" ->
-          {:ok, file_binary} = File.read(local_path)
-          "--#{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"upload.jpg\"\r\nContent-Type: image/jpeg\r\n\r\n#{file_binary}\r\n"
-        name ->
-          val = case name do
-            "api_key" -> api_key
-            "timestamp" -> timestamp
-            "signature" -> signature
-          end
-          "--#{boundary}\r\nContent-Disposition: form-data; name=\"#{name}\"\r\n\r\n#{val}\r\n"
-      end) <> "--#{boundary}--\r\n"
+    # Read raw binary without enforcing string interpolation rules
+    {:ok, file_binary} = File.read(local_path)
+    
+    # Pack parameters inside iodata to avoid internal string conversion crashes
+    body = [
+      "--#{boundary}\r\nContent-Disposition: form-data; name=\"api_key\"\r\n\r\n#{api_key}\r\n",
+      "--#{boundary}\r\nContent-Disposition: form-data; name=\"timestamp\"\r\n\r\n#{timestamp}\r\n",
+      "--#{boundary}\r\nContent-Disposition: form-data; name=\"signature\"\r\n\r\n#{signature}\r\n",
+      "--#{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"upload.jpg\"\r\nContent-Type: image/jpeg\r\n\r\n",
+      file_binary,
+      "\r\n--#{boundary}--\r\n"
+    ]
 
     case :httpc.request(:post, {url_cl, headers_cl, content_type_cl, body}, [], []) do
       {:ok, {{_, 200, _}, _headers, response_body}} ->
