@@ -12,7 +12,7 @@ defmodule Home.Properties.Property do
     field :tv, :boolean, default: false
     field :music_system, :boolean, default: false
     field :status, :string, default: "Available"
-    field :unavailable_until, :date
+    field :unavailable_until, :naive_datetime
 
     has_many :property_images, Home.Properties.PropertyImage
 
