@@ -44,9 +44,10 @@ if config_env() == :prod do
       else: []
 
   config :home, Home.Repo,
-    url: database_url,
-    pool_size: String.to_integer(System.get_env("POOL_SIZE") || "10"),
-    socket_options: maybe_ipv6
+  url: database_url,
+  pool_size: String.to_integer(System.get_env("POOL_SIZE") || "10"),
+  socket_options: maybe_ipv6,
+  ssl: true
 
   secret_key_base =
     System.get_env("SECRET_KEY_BASE") ||
