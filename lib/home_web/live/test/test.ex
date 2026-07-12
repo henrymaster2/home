@@ -34,7 +34,11 @@ defmodule HomeWeb.TestLive do
   end
 
   @impl true
-  def handle_event("validate", %{"name" => name, "price" => price, "description" => description, "status" => status}, socket) do
+  def handle_event(
+        "validate",
+        %{"name" => name, "price" => price, "description" => description, "status" => status},
+        socket
+      ) do
     {:noreply, assign(socket, name: name, price: price, description: description, status: status)}
   end
 
@@ -50,11 +54,13 @@ defmodule HomeWeb.TestLive do
 
     if type != "" and price != "" do
       new_variation = %{type: type, price: String.to_integer(price)}
-      {:noreply, assign(socket, 
-        variations: socket.assigns.variations ++ [new_variation],
-        var_type: "",
-        var_price: ""
-      )}
+
+      {:noreply,
+       assign(socket,
+         variations: socket.assigns.variations ++ [new_variation],
+         var_type: "",
+         var_price: ""
+       )}
     else
       {:noreply, socket}
     end
@@ -69,16 +75,17 @@ defmodule HomeWeb.TestLive do
   @impl true
   def handle_event("save", _params, socket) do
     has_image = Enum.any?(socket.uploads.image.entries)
-    
+
     if socket.assigns.name == "" or socket.assigns.description == "" or not has_image do
       {:noreply, put_flash(socket, :error, "Please provide a Name, Description, and Image.")}
     else
-      base_price = case Integer.parse(socket.assigns.price) do
-        {num, _} -> num
-        :error -> 0
-      end
-      
-      final_price = 
+      base_price =
+        case Integer.parse(socket.assigns.price) do
+          {num, _} -> num
+          :error -> 0
+        end
+
+      final_price =
         if socket.assigns.category == "Food" do
           base_price
         else
@@ -91,9 +98,10 @@ defmodule HomeWeb.TestLive do
       if final_price <= 0 do
         {:noreply, put_flash(socket, :error, "Please set a valid price.")}
       else
-        [image_url] = consume_uploaded_entries(socket, :image, fn %{path: path}, _entry ->
-          {:ok, "/uploads/#{Path.basename(path)}"}
-        end)
+        [image_url] =
+          consume_uploaded_entries(socket, :image, fn %{path: path}, _entry ->
+            {:ok, "/uploads/#{Path.basename(path)}"}
+          end)
 
         _payload = %{
           name: socket.assigns.name,
@@ -102,7 +110,8 @@ defmodule HomeWeb.TestLive do
           description: socket.assigns.description,
           status: socket.assigns.status,
           image_url: image_url,
-          variations: if(socket.assigns.category != "Food", do: socket.assigns.variations, else: [])
+          variations:
+            if(socket.assigns.category != "Food", do: socket.assigns.variations, else: [])
         }
 
         Process.send_after(self(), :clear_success, 3000)
@@ -123,10 +132,11 @@ defmodule HomeWeb.TestLive do
   # --- Internal UI Components & CSS Render Template ---
 
   attr :status, :string, required: true
+
   def status_badge(assigns) do
     ~H"""
     <span class={"status-badge badge-#{@status |> String.downcase() |> String.replace(" ", "-")}"}>
-      <%= @status %>
+      {@status}
     </span>
     """
   end
@@ -643,7 +653,20 @@ defmodule HomeWeb.TestLive do
             <p class="panel-subtitle" style="font-size: 9px; letter-spacing: 0.18em;">Staff Panel</p>
           </div>
           <button type="button" phx-click="toggle_sidebar" class="menu-btn">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" style="width: 1.5rem; height: 1.5rem;"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" /></svg>
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke-width="1.5"
+              stroke="currentColor"
+              style="width: 1.5rem; height: 1.5rem;"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5"
+              />
+            </svg>
           </button>
         </header>
 
@@ -658,8 +681,22 @@ defmodule HomeWeb.TestLive do
                   <h1 class="brand-title" style="font-size: 1.125rem;">African Cuisine</h1>
                   <p class="panel-subtitle">Staff Panel</p>
                 </div>
-                <button type="button" phx-click="toggle_sidebar" class="menu-btn" style="height:2.5rem; width:2.5rem; background:#f1f5f9; border:none;">
-                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" style="width: 1.25rem; height: 1.25rem;"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
+                <button
+                  type="button"
+                  phx-click="toggle_sidebar"
+                  class="menu-btn"
+                  style="height:2.5rem; width:2.5rem; background:#f1f5f9; border:none;"
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke-width="1.5"
+                    stroke="currentColor"
+                    style="width: 1.25rem; height: 1.25rem;"
+                  >
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+                  </svg>
                 </button>
               </div>
               <.staff_nav variant="sidebar" pathname={@pathname} phx-click="toggle_sidebar" />
@@ -671,12 +708,29 @@ defmodule HomeWeb.TestLive do
           <div style="max-width: 64rem; margin: 0 auto;">
             <div class="page-header-block">
               <div>
-                <h2 style="font-size: 1.75rem; font-weight: 800; color: #1e293b; margin: 0;"><%= @page_title %></h2>
-                <p style="color: var(--text-slate-500); margin: 0.25rem 0 0 0;">Configure item details for customers to see.</p>
+                <h2 style="font-size: 1.75rem; font-weight: 800; color: #1e293b; margin: 0;">
+                  {@page_title}
+                </h2>
+                <p style="color: var(--text-slate-500); margin: 0.25rem 0 0 0;">
+                  Configure item details for customers to see.
+                </p>
               </div>
               <%= if @success do %>
                 <div class="success-toast">
-                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width: 1.25rem; height: 1.25rem;"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke-width="2"
+                    stroke="currentColor"
+                    style="width: 1.25rem; height: 1.25rem;"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                    />
+                  </svg>
                   <span>Item Published!</span>
                 </div>
               <% end %>
@@ -684,25 +738,47 @@ defmodule HomeWeb.TestLive do
 
             <div class="tabs-bar">
               <%= for {cat_id, emoji} <- [{"Food", "🍕"}, {"Drinks", "🍺"}, {"Fruits", "🍎"}, {"Others", "🥞"}] do %>
-                <button type="button" phx-click="set_category" phx-value-category={cat_id} class={"tab-btn #{if @category == cat_id, do: "active"}"}>
-                  <span><%= emoji %></span><%= cat_id %>
+                <button
+                  type="button"
+                  phx-click="set_category"
+                  phx-value-category={cat_id}
+                  class={"tab-btn #{if @category == cat_id, do: "active"}"}
+                >
+                  <span><%= emoji %></span>{cat_id}
                 </button>
               <% end %>
             </div>
 
             <div class="grid-layout">
               <div class="form-card">
-                <form phx-change="validate" phx-submit="save" class="space-y-6" style="display: flex; flex-direction: column; gap: 1.5rem;">
+                <form
+                  phx-change="validate"
+                  phx-submit="save"
+                  class="space-y-6"
+                  style="display: flex; flex-direction: column; gap: 1.5rem;"
+                >
                   <div class="form-grid">
                     <div class="input-wrapper">
-                      <label class="field-label"><%= @category %> Name</label>
-                      <input type="text" name="name" value={@name} class="styled-input" placeholder={"e.g. #{if @category == "Drinks", do: "Soda", else: "Mbuzi Choma"}"} />
+                      <label class="field-label">{@category} Name</label>
+                      <input
+                        type="text"
+                        name="name"
+                        value={@name}
+                        class="styled-input"
+                        placeholder={"e.g. #{if @category == "Drinks", do: "Soda", else: "Mbuzi Choma"}"}
+                      />
                     </div>
                     <div class="input-wrapper">
                       <label class="field-label">Base Price (KSh)</label>
                       <div class="price-input-container">
                         <span class="currency-prefix">KES</span>
-                        <input type="number" name="price" value={@price} class="styled-input" placeholder="0.00" />
+                        <input
+                          type="number"
+                          name="price"
+                          value={@price}
+                          class="styled-input"
+                          placeholder="0.00"
+                        />
                       </div>
                     </div>
                   </div>
@@ -711,18 +787,41 @@ defmodule HomeWeb.TestLive do
                     <div class="variations-box">
                       <div style="display: flex; justify-content: space-between; align-items: center;">
                         <label class="field-label" style="color: #9a3412;">Sizes / Variations</label>
-                        <span style="font-size: 10px; color: #fb923c; font-weight: 700; font-style: italic; text-transform: uppercase;">Recommended for drinks</span>
+                        <span style="font-size: 10px; color: #fb923c; font-weight: 700; font-style: italic; text-transform: uppercase;">
+                          Recommended for drinks
+                        </span>
                       </div>
                       <div class="variation-entry-row" phx-change="validate_variation">
-                        <input type="text" name="var_type" value={@var_type} placeholder="e.g. 500ml" class="styled-input" style="background: white; border: 1px solid var(--border-slate-200);" />
-                        <input type="number" name="var_price" value={@var_price} placeholder="Price" class="styled-input" style="background: white; border: 1px solid var(--border-slate-200);" />
+                        <input
+                          type="text"
+                          name="var_type"
+                          value={@var_type}
+                          placeholder="e.g. 500ml"
+                          class="styled-input"
+                          style="background: white; border: 1px solid var(--border-slate-200);"
+                        />
+                        <input
+                          type="number"
+                          name="var_price"
+                          value={@var_price}
+                          placeholder="Price"
+                          class="styled-input"
+                          style="background: white; border: 1px solid var(--border-slate-200);"
+                        />
                         <button type="button" phx-click="add_variation" class="add-var-btn">➕</button>
                       </div>
                       <div class="chips-container">
                         <%= for {v, i} <- Enum.with_index(@variations) do %>
                           <div class="var-chip">
-                            <%= v.type %>: <%= v.price %>/-
-                            <button type="button" phx-click="remove_variation" phx-value-index={i} class="remove-chip-btn">✕</button>
+                            {v.type}: {v.price}/-
+                            <button
+                              type="button"
+                              phx-click="remove_variation"
+                              phx-value-index={i}
+                              class="remove-chip-btn"
+                            >
+                              ✕
+                            </button>
                           </div>
                         <% end %>
                       </div>
@@ -731,23 +830,40 @@ defmodule HomeWeb.TestLive do
 
                   <div class="input-wrapper">
                     <label class="field-label">Description</label>
-                    <textarea rows="4" name="description" class="styled-textarea" placeholder="Short description for the customer..."><%= @description %></textarea>
+                    <textarea
+                      rows="4"
+                      name="description"
+                      class="styled-textarea"
+                      placeholder="Short description for the customer..."
+                    ><%= @description %></textarea>
                   </div>
 
                   <div class="form-grid">
                     <div class="input-wrapper">
                       <label class="field-label">Availability Status</label>
-                      <select name="status" class="styled-select" style="-webkit-appearance: none; font-weight: bold; color: #334155;">
-                        <option value="Available" selected={@status == "Available"}>Available Now</option>
-                        <option value="Pending" selected={@status == "Pending"}>Pending / Out of Stock</option>
-                        <option value="Not Available" selected={@status == "Not Available"}>Not Available</option>
+                      <select
+                        name="status"
+                        class="styled-select"
+                        style="-webkit-appearance: none; font-weight: bold; color: #334155;"
+                      >
+                        <option value="Available" selected={@status == "Available"}>
+                          Available Now
+                        </option>
+                        <option value="Pending" selected={@status == "Pending"}>
+                          Pending / Out of Stock
+                        </option>
+                        <option value="Not Available" selected={@status == "Not Available"}>
+                          Not Available
+                        </option>
                       </select>
                     </div>
                     <div class="input-wrapper">
                       <label class="field-label">Item Image</label>
                       <label class="file-dropzone" phx-drop-target={@uploads.image.ref}>
                         <span style="font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: -0.01em;">
-                          <%= if Enum.any?(@uploads.image.entries), do: "Image Ready 📸", else: "Select Photo 📤" %>
+                          {if Enum.any?(@uploads.image.entries),
+                            do: "Image Ready 📸",
+                            else: "Select Photo 📤"}
                         </span>
                         <.live_file_input upload={@uploads.image} style="display: none;" />
                       </label>
@@ -755,7 +871,7 @@ defmodule HomeWeb.TestLive do
                   </div>
 
                   <button type="submit" class="submit-btn">
-                    Add to <%= @category %> Section
+                    Add to {@category} Section
                   </button>
                 </form>
               </div>
@@ -769,30 +885,47 @@ defmodule HomeWeb.TestLive do
                         <.live_img_preview entry={entry} />
                       <% end %>
                     <% else %>
-                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1" stroke="currentColor" style="width: 3rem; height: 3rem;"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375 0 11-.75 0 .375 0 010 .75z" /></svg>
-                      <p style="font-size: 10px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.1em; margin: 0.5rem 0 0 0;">No Image Linked</p>
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke-width="1"
+                        stroke="currentColor"
+                        style="width: 3rem; height: 3rem;"
+                      >
+                        <path
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375 0 11-.75 0 .375 0 010 .75z"
+                        />
+                      </svg>
+                      <p style="font-size: 10px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.1em; margin: 0.5rem 0 0 0;">
+                        No Image Linked
+                      </p>
                     <% end %>
                     <div class="badge-container"><.status_badge status={@status} /></div>
                   </div>
                   <div class="preview-details">
-                    <h4 class="preview-title"><%= if @name == "", do: "New Item", else: @name %></h4>
-                    
+                    <h4 class="preview-title">{if @name == "", do: "New Item", else: @name}</h4>
+
                     <%= if @category != "Food" and length(@variations) > 0 do %>
                       <% first_var = List.first(@variations) %>
                       <div style="margin-top: 0.75rem;">
                         <div style="font-size: 0.75rem; font-weight: 900; border: 2px solid #f1f5f9; border-radius: 0.5rem; padding: 0.5rem 0.75rem; background: var(--bg-slate-50); color: var(--text-orange); width: fit-content;">
-                          <%= first_var.type %> — KSh <%= first_var.price %>
+                          {first_var.type} — KSh {first_var.price}
                         </div>
                       </div>
                     <% else %>
-                      <p class="preview-price">KSh <%= if @price == "", do: "0.00", else: @price %></p>
+                      <p class="preview-price">KSh {if @price == "", do: "0.00", else: @price}</p>
                     <% end %>
 
                     <p class="preview-desc">
-                      <%= if @description == "", do: "Product details will appear here for the customer.", else: @description %>
+                      {if @description == "",
+                        do: "Product details will appear here for the customer.",
+                        else: @description}
                     </p>
                     <div class="preview-footer">
-                      <span class="category-tag"><%= @category %></span>
+                      <span class="category-tag">{@category}</span>
                       <div class="circle-plus-icon">＋</div>
                     </div>
                   </div>
@@ -808,15 +941,31 @@ defmodule HomeWeb.TestLive do
 
   defp staff_nav(assigns) do
     ~H"""
-    <nav class={if @variant == "mobile", do: "tabs-bar", else: "nav-container"} style={if @variant == "mobile", do: "margin: 0.75rem 1rem; width: auto; max-width: calc(100vw - 2rem);", else: ""}>
+    <nav
+      class={if @variant == "mobile", do: "tabs-bar", else: "nav-container"}
+      style={
+        if @variant == "mobile",
+          do: "margin: 0.75rem 1rem; width: auto; max-width: calc(100vw - 2rem);",
+          else: ""
+      }
+    >
       <% items = [
         {"/staff", "Add New Item"},
         {"/staff/inventory", "Menu Inventory"},
         {"/staff/orders", "Live Orders"}
       ] %>
       <%= for {href, label} <- items do %>
-        <a href={href} class={"nav-link #{if @pathname == href, do: "active"}"} style={if @variant == "mobile", do: "padding: 0.5rem 0.75rem; font-size: 0.75rem; margin-bottom: 0; white-space: nowrap;", else: ""}>
-          <span><%= label %></span>
+        <a
+          href={href}
+          class={"nav-link #{if @pathname == href, do: "active"}"}
+          style={
+            if @variant == "mobile",
+              do:
+                "padding: 0.5rem 0.75rem; font-size: 0.75rem; margin-bottom: 0; white-space: nowrap;",
+              else: ""
+          }
+        >
+          <span>{label}</span>
         </a>
       <% end %>
     </nav>

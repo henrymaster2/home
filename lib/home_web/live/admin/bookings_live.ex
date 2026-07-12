@@ -7,7 +7,7 @@ defmodule HomeWeb.Admin.BookingsLive do
 
   def render(assigns) do
     ~H"""
-    <div >
+    <div>
       Bookings Page
     </div>
     """

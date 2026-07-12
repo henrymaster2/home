@@ -2,11 +2,15 @@ import Config
 
 # Configure your database for local development safely
 config :home, Home.Repo,
-  url: System.get_env("DATABASE_URL") || "postgresql://postgres:henry123@localhost/home",
-  # Disabled for local development to prevent Postgrex handshake errors
-  ssl: false,
+  url: System.get_env("DATABASE_URL"),
+  ssl: true,
+  ssl_opts: [
+    verify: :verify_none
+  ],
   pool_size: 10,
-  show_sensitive_data_on_connection_error: true
+  queue_target: 10_000,
+  queue_interval: 1000,
+  timeout: 30_000
 
 # For development, we disable any cache and enable
 # debugging and code reloading.

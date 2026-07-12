@@ -1,4 +1,3 @@
-<%# Premium Custom style overrides for ultra-smooth native scroll dynamics %>
 <style>
   .no-scrollbar::-webkit-scrollbar { display: none; }
   .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
@@ -7,63 +6,86 @@
 
 <div class="min-h-screen bg-gradient-to-b from-zinc-950 via-slate-900 to-zinc-950 text-zinc-100 antialiased pb-36 select-none">
   
-  <%# Global Premium Navigation Header %>
   <header class="sticky top-0 z-40 bg-zinc-950/70 backdrop-blur-xl border-b border-zinc-900/80 px-4 py-4 sm:px-8 transition-all duration-300">
     <div class="max-w-7xl mx-auto flex flex-col sm:flex-row gap-4 items-center justify-between">
       
-      <%# Desktop Brand Identity Vector %>
       <div class="hidden md:flex items-center gap-2.5">
-        <span class="bg-gradient-to-br from-blue-500 to-indigo-600 text-white p-2.5 rounded-2xl shadow-lg shadow-blue-500/10 text-xs">🏠</span>
+        <span class="bg-gradient-to-br from-blue-500 to-indigo-600 text-white p-2.5 rounded-2xl shadow-lg shadow-blue-500/10 text-xs">
+          🏠
+        </span>
         <h1 class="text-md font-black text-white tracking-wider uppercase">
           Home<span class="text-blue-500">Hub</span>
         </h1>
       </div>
 
-      <%# Universal Advanced Search Bar Components %>
       <div class="w-full sm:max-w-md bg-zinc-900/90 border border-zinc-800 rounded-full py-2.5 px-4 shadow-xl shadow-black/40 hover:border-zinc-700 transition duration-300 cursor-pointer group flex items-center justify-between">
         <div class="flex items-center gap-3.5 flex-1">
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-4 h-4 text-blue-400 group-hover:scale-110 transition duration-300">
-            <path stroke-linecap="round" stroke-linejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.602 10.602Z" />
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke-width="2.5"
+            stroke="currentColor"
+            class="w-4 h-4 text-blue-400 group-hover:scale-110 transition duration-300"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.602 10.602Z"
+            />
           </svg>
           <div class="truncate">
-            <div class="text-[11px] font-bold text-zinc-200 tracking-wide uppercase">Where to venture?</div>
+            <div class="text-[11px] font-bold text-zinc-200 tracking-wide uppercase">
+              Where to venture?
+            </div>
             <div class="text-[11px] text-zinc-400 flex gap-1.5 items-center truncate">
               <span>Anywhere</span>•<span>Any week</span>•<span>Add guests</span>
             </div>
           </div>
         </div>
-        
+
         <button class="p-2 rounded-full bg-zinc-800 text-zinc-300 border border-zinc-700/50 hover:bg-zinc-700 hover:text-white transition shadow-md">
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-3.5 h-3.5">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 6h9.75M10.5 6a1.5 1.5 0 1 1-3 0m3 0a1.5 1.5 0 1 0-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 1 1-3 0m3 0a1.5 1.5 0 1 0-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 1 1-3 0m3 0a1.5 1.5 0 1 0-3 0M3.75 12h7.5" />
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke-width="2"
+            stroke="currentColor"
+            class="w-3.5 h-3.5"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              d="M10.5 6h9.75M10.5 6a1.5 1.5 0 1 1-3 0m3 0a1.5 1.5 0 1 0-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 1 1-3 0m3 0a1.5 1.5 0 1 0-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 1 1-3 0m3 0a1.5 1.5 0 1 0-3 0M3.75 12h7.5"
+            />
           </svg>
         </button>
       </div>
 
-      <%# Desktop Profile / Status Action Element %>
       <div class="hidden md:flex items-center gap-4">
         <span class="text-[10px] font-bold tracking-widest uppercase text-blue-400 bg-blue-500/5 border border-blue-500/20 px-3 py-1.5 rounded-full shadow-inner">
           ● Guest Portal Mode
         </span>
       </div>
-
     </div>
   </header>
 
-  <%# Fully Responsive Main Container Grid %>
   <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-8 sm:mt-12">
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 sm:gap-8">
-      
       <%= for property <- @properties do %>
         <div class="group relative flex flex-col bg-zinc-900/30 border border-zinc-800/60 rounded-[2rem] overflow-hidden transition-all duration-300 hover:border-zinc-700/60 hover:bg-zinc-900/50 shadow-xl shadow-black/20 hover:shadow-blue-950/10">
           
-          <%# Dynamic Scrollable Asset Carousel Component %>
           <div class="relative aspect-[4/3] w-full overflow-hidden bg-zinc-950/80 rounded-[1.75rem] m-2 mx-auto max-w-[calc(100%-16px)]">
             <div class="no-scrollbar carousel-snap flex w-full h-full overflow-x-auto scroll-smooth">
               <%= if property.property_images != [] do %>
                 <%= for img <- property.property_images do %>
                   <div class="w-full h-full flex-shrink-0 snap-start snap-always">
-                    <img src={img.image_url} alt={property.title} class="w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-105" loading="lazy" />
+                    <img
+                      src={img.image_url}
+                      alt={property.title}
+                      class="w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-105"
+                      loading="lazy"
+                    />
                   </div>
                 <% end %>
               <% else %>
@@ -73,47 +95,55 @@
               <% end %>
             </div>
 
-            <%# Floating Utility Overlay Tags %>
             <div class="absolute top-3 left-3 z-10 flex gap-1.5">
               <span class="text-[9px] font-extrabold tracking-widest bg-zinc-950/60 backdrop-blur-md px-2.5 py-1 rounded-lg border border-white/10 text-blue-400 uppercase">
-                <%= property.tier %>
+                {property.tier}
               </span>
             </div>
 
             <div class="absolute top-3 right-3 z-10">
               <button class="p-2.5 rounded-full bg-zinc-950/40 backdrop-blur-md text-zinc-300 border border-white/5 hover:bg-zinc-950/70 hover:text-white transition duration-200 shadow-md">
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.2" stroke="currentColor" class="w-4 h-4">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12Z" />
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke-width="2.2"
+                  stroke="currentColor"
+                  class="w-4 h-4"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12Z"
+                  />
                 </svg>
               </button>
             </div>
 
-            <%# Dynamic Pager Animations (Self-calculating based on image load array) %>
             <%= if length(property.property_images) > 1 do %>
               <div class="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5 px-2.5 py-1.5 rounded-xl bg-zinc-950/60 backdrop-blur-md border border-white/5 pointer-events-none">
                 <%= for _img <- property.property_images do %>
-                  <span class="w-1.5 h-1.5 rounded-full bg-zinc-500/60 transition-all duration-300 first:bg-blue-400 first:w-3.5"></span>
+                  <span class="w-1.5 h-1.5 rounded-full bg-zinc-500/60 transition-all duration-300 first:bg-blue-400 first:w-3.5">
+                  </span>
                 <% end %>
               </div>
             <% end %>
           </div>
 
-          <%# Informational Metadata Stack %>
           <div class="p-5 flex flex-col flex-1 justify-between gap-4">
             <div class="space-y-1.5">
               <div class="flex justify-between items-start gap-2">
                 <h3 class="font-bold text-base text-zinc-100 tracking-tight truncate group-hover:text-blue-400 transition-colors duration-300">
-                  <%= property.location %>
+                  {property.location}
                 </h3>
                 <div class="flex items-center gap-1 text-xs font-bold text-amber-400 bg-amber-400/5 px-2 py-0.5 rounded-lg border border-amber-400/10 shrink-0">
                   ★ 4.95
                 </div>
               </div>
-              
-              <p class="text-xs text-zinc-400 tracking-wide line-clamp-1"><%= property.title %></p>
+
+              <p class="text-xs text-zinc-400 tracking-wide line-clamp-1">{property.title}</p>
             </div>
 
-            <%# Structural System Feature Badges %>
             <div class="flex flex-wrap gap-1.5 pt-1">
               <%= if property.wifi do %>
                 <span class="text-[9px] font-bold tracking-wide uppercase bg-zinc-950/50 text-zinc-400 border border-zinc-800/80 px-2 py-1 rounded-md flex items-center gap-1">
@@ -132,68 +162,96 @@
               <% end %>
             </div>
 
-            <%# Secured Locked Rate Action Component (replaces raw prices) %>
             <div class="pt-3.5 border-t border-zinc-800/60 flex items-center justify-between gap-2 mt-auto">
               <div class="flex flex-col">
-                <span class="text-[9px] uppercase tracking-widest text-zinc-500 font-bold">Rate Status</span>
+                <span class="text-[9px] uppercase tracking-widest text-zinc-500 font-bold">
+                  Rate Status
+                </span>
                 <span class="text-xs font-semibold text-zinc-300 flex items-center gap-1 mt-0.5">
                   🔒 Locked
                 </span>
               </div>
-              
+
               <button class="text-[10px] font-bold tracking-wider uppercase bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white px-3.5 py-2 rounded-xl transition duration-200 shadow-lg shadow-blue-500/10">
                 Unlock Rates
               </button>
             </div>
-
           </div>
         </div>
       <% end %>
-
     </div>
 
-    <%# Fallback Empty State Canvas Vector %>
     <%= if @properties == [] do %>
       <div class="text-center py-24 bg-zinc-900/10 border border-dashed border-zinc-800/80 rounded-[2.5rem] max-w-md mx-auto mt-12 backdrop-blur-sm">
         <span class="text-4xl block mb-3.5">🌍</span>
-        <h3 class="text-sm font-bold text-zinc-300 uppercase tracking-wider">No Properties Available</h3>
-        <p class="text-xs text-zinc-500 mt-2 max-w-xs mx-auto leading-relaxed">We couldn't locate active units. Check back soon or customize your search options.</p>
+        <h3 class="text-sm font-bold text-zinc-300 uppercase tracking-wider">
+          No Properties Available
+        </h3>
+        <p class="text-xs text-zinc-500 mt-2 max-w-xs mx-auto leading-relaxed">
+          We couldn't locate active units. Check back soon or customize your search options.
+        </p>
       </div>
     <% end %>
   </main>
 
-  <%# Floating iOS-Style Navigation Dock (WhatsApp Mobile Architecture Minimalist Design) %>
   <div class="fixed bottom-6 left-1/2 -translate-x-1/2 w-[90%] sm:max-w-xs z-50 transition-transform duration-300">
     <nav class="flex items-center justify-around bg-zinc-900/80 backdrop-blur-2xl border border-zinc-800 rounded-full px-4 py-3 shadow-2xl shadow-black/90">
       
-      <%# Action item: Explore %>
       <button class="flex flex-col items-center gap-1 text-blue-400 group focus:outline-none">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5 transition-transform duration-200 group-hover:scale-110">
-          <path fill-rule="evenodd" d="M10.5 3.75a6.75 6.75 0 1 0 0 13.5 6.75 6.75 0 0 0 0-13.5ZM2.25 10.5a8.25 8.25 0 1 1 14.59 5.28l4.69 4.69a.75 0 1 1-1.06 1.06l-4.69-4.69A8.25 8.25 0 0 1 2.25 10.5Z" clip-rule="evenodd" />
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 24 24"
+          fill="currentColor"
+          class="w-5 h-5 transition-transform duration-200 group-hover:scale-110"
+        >
+          <path
+            fill-rule="evenodd"
+            d="M10.5 3.75a6.75 6.75 0 1 0 0 13.5 6.75 6.75 0 0 0 0-13.5ZM2.25 10.5a8.25 8.25 0 1 1 14.59 5.28l4.69 4.69a.75 0 1 1-1.06 1.06l-4.69-4.69A8.25 8.25 0 0 1 2.25 10.5Z"
+            clip-rule="evenodd"
+          />
         </svg>
         <span class="text-[9px] font-black tracking-widest uppercase">Explore</span>
       </button>
 
-      <%# Action item: Inbox %>
       <button class="flex flex-col items-center gap-1 text-zinc-400 hover:text-zinc-200 group focus:outline-none transition">
         <div class="relative">
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.2" stroke="currentColor" class="w-5 h-5 transition-transform duration-200 group-hover:scale-110">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.129.166 2.27.293 3.423.379.35.026.67.21.865.501L12 21l2.755-4.133a1.14 1.14 0 0 1 .865-.501 48.172 48.172 0 0 0 3.423-.379c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0 0 12 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018Z" />
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke-width="2.2"
+            stroke="currentColor"
+            class="w-5 h-5 transition-transform duration-200 group-hover:scale-110"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              d="M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.129.166 2.27.293 3.423.379.35.026.67.21.865.501L12 21l2.755-4.133a1.14 1.14 0 0 1 .865-.501 48.172 48.172 0 0 0 3.423-.379c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0 0 12 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018Z"
+            />
           </svg>
-          <span class="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span>
+          <span class="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-blue-500 animate-pulse">
+          </span>
         </div>
         <span class="text-[9px] font-bold tracking-widest uppercase">Inbox</span>
       </button>
 
-      <%# Action item: Profile %>
       <button class="flex flex-col items-center gap-1 text-zinc-400 hover:text-zinc-200 group focus:outline-none transition">
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.2" stroke="currentColor" class="w-5 h-5 transition-transform duration-200 group-hover:scale-110">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M17.982 18.725A7.488 7.488 0 0 0 12 15.75a7.488 7.488 0 0 0-5.982 2.975m11.963 0a9 9 0 1 0-11.963 0m11.963 0A8.966 8.966 0 0 1 12 21a8.966 8.966 0 0 1-5.982-2.275M15 9.75a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke-width="2.2"
+          stroke="currentColor"
+          class="w-5 h-5 transition-transform duration-200 group-hover:scale-110"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            d="M17.982 18.725A7.488 7.488 0 0 0 12 15.75a7.488 7.488 0 0 0-5.982 2.975m11.963 0a9 9 0 1 0-11.963 0m11.963 0A8.966 8.966 0 0 1 12 21a8.966 8.966 0 0 1-5.982-2.275M15 9.75a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"
+          />
         </svg>
         <span class="text-[9px] font-bold tracking-widest uppercase">Profile</span>
       </button>
-
     </nav>
   </div>
-
 </div>

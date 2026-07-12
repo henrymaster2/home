@@ -1,7 +1,7 @@
 defmodule HomeWeb.PageController do
   use HomeWeb, :controller
   import Ecto.Query
-  
+
   alias Home.Repo
   alias Home.Properties.Property
 
