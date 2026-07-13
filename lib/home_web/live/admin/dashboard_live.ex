@@ -19,6 +19,21 @@ defmodule HomeWeb.Admin.DashboardLive do
     {:ok, socket}
   end
 
+  defp default_form_data do
+    %{
+      "title" => "",
+      "location" => "",
+      "night_price" => "",
+      "day_price" => "",
+      "tier" => "Normal",
+      "wifi" => "false",
+      "tv" => "false",
+      "music_system" => "false",
+      "status" => "Available",
+      "unavailable_until" => ""
+    }
+  end
+
   defp fetch_database_records(socket) do
     properties = Property |> order_by(desc: :id) |> Repo.all() |> Repo.preload(:property_images)
     bookings = Booking |> order_by(desc: :inserted_at) |> Repo.all() |> Repo.preload(:property)
@@ -41,36 +56,61 @@ defmodule HomeWeb.Admin.DashboardLive do
     {:noreply, cancel_upload(socket, :property_images, ref)}
   end
 
+  # dedicated, reliable toggle for the perk buttons (wifi / tv / music_system).
+  # This is independent of the surrounding form's phx-change, so clicking always
+  # flips the value instantly - no more relying on the browser silently omitting
+  # unchecked checkboxes from the submitted params.
   @impl true
-  def handle_event("change_form", params, socket) do
-    normalized =
-      Map.get(params, "property", %{})
-      |> Map.merge(%{"wifi" => "false", "tv" => "false", "music_system" => "false"}, fn _,
-                                                                                        v,
-                                                                                        default ->
-        v || default
-      end)
+  def handle_event("toggle_feature", %{"feature" => feature}, socket)
+      when feature in ["wifi", "tv", "music_system"] do
+    current_value = Map.get(socket.assigns.form_data, feature, "false")
+    new_value = if current_value == "true", do: "false", else: "true"
+
+    {:noreply, assign(socket, form_data: Map.put(socket.assigns.form_data, feature, new_value))}
+  end
+
+  @impl true
+  def handle_event("change_form", %{"property" => property_params}, socket) do
+    features_normalized = %{
+      "wifi" => Map.get(property_params, "wifi", "false"),
+      "tv" => Map.get(property_params, "tv", "false"),
+      "music_system" => Map.get(property_params, "music_system", "false")
+    }
+
+    normalized = Map.merge(property_params, features_normalized)
 
     {:noreply, assign(socket, form_data: normalized)}
   end
 
+  def handle_event("change_form", _params, socket) do
+    {:noreply, socket}
+  end
+
   @impl true
   def handle_event("save_property", %{"property" => params}, socket) do
-    uploaded_urls =
+    upload_results =
       consume_uploaded_entries(socket, :property_images, fn %{path: path}, _entry ->
-        case upload_to_cloudinary(path) do
-          {:ok, url} -> url
-          _ -> nil
-        end
+        # consume_uploaded_entries deletes the tmp file right after this callback
+        # returns, so we upload to Cloudinary synchronously from the tmp path.
+        {:ok, Home.Cloudinary.upload(path)}
       end)
-      |> Enum.filter(& &1)
+
+    {uploaded_urls, upload_errors} =
+      Enum.split_with(upload_results, &match?({:ok, _url}, &1))
+
+    uploaded_urls = Enum.map(uploaded_urls, fn {:ok, url} -> url end)
+
+    if upload_errors != [] do
+      Enum.each(upload_errors, fn {:error, reason} ->
+        require Logger
+        Logger.error("Cloudinary upload failed: #{inspect(reason)}")
+      end)
+    end
 
     unavailable_until_raw = Map.get(params, "unavailable_until", "")
 
     unavailable_until_parsed =
       if params["status"] != "Available" and unavailable_until_raw != "" do
-        # HTML datetime-local returns "YYYY-MM-DDTHH:MM". 
-        # Appending seconds prevents schema casting issues down the line.
         if String.length(unavailable_until_raw) == 16,
           do: unavailable_until_raw <> ":00",
           else: unavailable_until_raw
@@ -105,9 +145,18 @@ defmodule HomeWeb.Admin.DashboardLive do
            end
          end) do
       {:ok, _} ->
+        flash_kind = if upload_errors == [], do: :info, else: :error
+
+        flash_message =
+          if upload_errors == [] do
+            "Property saved successfully."
+          else
+            "Property saved, but #{length(upload_errors)} image(s) failed to upload to Cloudinary."
+          end
+
         {:noreply,
          socket
-         |> put_flash(:info, "Property saved successfully.")
+         |> put_flash(flash_kind, flash_message)
          |> assign(:form_data, default_form_data())
          |> fetch_database_records()
          |> assign(:current_tab, "manage_properties")}
@@ -123,6 +172,10 @@ defmodule HomeWeb.Admin.DashboardLive do
     {:noreply, socket |> put_flash(:info, "Item removed.") |> fetch_database_records()}
   end
 
+  defp fill_blank(val, fallback) do
+    if val in ["", nil], do: fallback, else: val
+  end
+
   @impl true
   def render(assigns) do
     lnk =
@@ -135,7 +188,7 @@ defmodule HomeWeb.Admin.DashboardLive do
       "w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-zinc-100 focus:border-blue-500 focus:outline-none"
 
     prk =
-      "flex flex-col items-center justify-center p-3 rounded-xl border text-center cursor-pointer select-none "
+      "flex flex-col items-center justify-center p-4 rounded-xl border text-center cursor-pointer select-none transition-all duration-150 "
 
     assigns = assign(assigns, lnk: lnk, act: act, inact: inact, inp: inp, prk: prk)
 
@@ -143,7 +196,10 @@ defmodule HomeWeb.Admin.DashboardLive do
     <div class="flex flex-col lg:flex-row min-h-screen bg-zinc-950 text-zinc-100 font-sans antialiased">
       <header class="bg-zinc-900 border-b border-zinc-800 px-5 py-4 flex lg:hidden justify-between items-center sticky top-0 z-40">
         <h1 class="text-base font-bold text-white flex items-center gap-2">
-          <span class="text-blue-500">🏠</span> Home Admin
+          <svg class="w-5 h-5 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+          </svg>
+          <span>Home Admin</span>
         </h1>
         <button
           phx-click="toggle_mobile_menu"
@@ -157,7 +213,10 @@ defmodule HomeWeb.Admin.DashboardLive do
         <div>
           <div class="hidden lg:flex p-6 border-b border-zinc-800/60">
             <h1 class="text-xl font-bold text-white flex items-center gap-2">
-              <span class="text-blue-500">🏠</span> Home Admin
+              <svg class="w-6 h-6 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+              </svg>
+              <span>Home Admin</span>
             </h1>
           </div>
           <nav class="p-4 space-y-1.5">
@@ -165,19 +224,34 @@ defmodule HomeWeb.Admin.DashboardLive do
               navigate={~p"/admin"}
               class={@lnk <> if(@current_tab == "add_property", do: @act, else: @inact)}
             >
-              <span class="flex items-center gap-3">➕ Add New Unit</span>
+              <span class="flex items-center gap-3">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                </svg>
+                <span>Add New Unit</span>
+              </span>
             </.link>
             <.link
               navigate={~p"/admin/property"}
               class={@lnk <> if(@current_tab == "manage_properties", do: @act, else: @inact)}
             >
-              <span class="flex items-center gap-3">📋 View Your Houses</span>
+              <span class="flex items-center gap-3">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+                </svg>
+                <span>View Your Houses</span>
+              </span>
             </.link>
             <.link
               navigate={~p"/admin/bookings"}
               class={@lnk <> if(@current_tab == "bookings", do: @act, else: @inact)}
             >
-              <span class="flex items-center gap-3">📅 Client Bookings</span>
+              <span class="flex items-center gap-3">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 002-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+                <span>Client Bookings</span>
+              </span>
               <span class="bg-zinc-950/60 text-blue-400 font-bold px-2 py-0.5 rounded-md text-[11px] border border-zinc-800">
                 {length(@bookings)}
               </span>
@@ -186,7 +260,12 @@ defmodule HomeWeb.Admin.DashboardLive do
               role="button"
               class="w-full flex items-center justify-between px-4 py-3 rounded-xl text-sm font-medium transition-all text-zinc-500 bg-zinc-950/20 border border-zinc-900/50 cursor-not-allowed select-none"
             >
-              <span class="flex items-center gap-3">💬 Messages</span>
+              <span class="flex items-center gap-3">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                </svg>
+                <span>Messages</span>
+              </span>
               <span class="bg-zinc-800 text-zinc-500 font-semibold px-1.5 py-0.5 rounded text-[10px]">
                 Soon
               </span>
@@ -195,7 +274,12 @@ defmodule HomeWeb.Admin.DashboardLive do
               navigate={~p"/admin/notifications"}
               class={@lnk <> if(@current_tab == "notifications", do: @act, else: @inact)}
             >
-              <span class="flex items-center gap-3">🔔 Notifications</span>
+              <span class="flex items-center gap-3">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                </svg>
+                <span>Notifications</span>
+              </span>
               <span class="bg-zinc-800 text-blue-400 font-semibold px-1.5 py-0.5 rounded text-[10px]">
                 Soon
               </span>
@@ -295,36 +379,52 @@ defmodule HomeWeb.Admin.DashboardLive do
                       Included Perks
                     </label>
                     <div class="grid grid-cols-3 gap-3">
-                      <label class={@prk <> if(@form_data["wifi"] == "true", do: "border-blue-500 bg-blue-500/10 text-white", else: "border-zinc-800 bg-zinc-950/20 text-zinc-400")}>
-                        <input
-                          type="checkbox"
-                          name="property[wifi]"
-                          value="true"
-                          checked={@form_data["wifi"] == "true"}
-                          class="hidden"
-                        />
-                        <span class="text-sm">📶 WiFi</span>
-                      </label>
-                      <label class={@prk <> if(@form_data["tv"] == "true", do: "border-blue-500 bg-blue-500/10 text-white", else: "border-zinc-800 bg-zinc-950/20 text-zinc-400")}>
-                        <input
-                          type="checkbox"
-                          name="property[tv]"
-                          value="true"
-                          checked={@form_data["tv"] == "true"}
-                          class="hidden"
-                        />
-                        <span class="text-sm">📺 Smart TV</span>
-                      </label>
-                      <label class={@prk <> if(@form_data["music_system"] == "true", do: "border-blue-500 bg-blue-500/10 text-white", else: "border-zinc-800 bg-zinc-950/20 text-zinc-400")}>
-                        <input
-                          type="checkbox"
-                          name="property[music_system]"
-                          value="true"
-                          checked={@form_data["music_system"] == "true"}
-                          class="hidden"
-                        />
-                        <span class="text-sm">🔊 Sound</span>
-                      </label>
+                      <!--
+                        Perks are now driven by phx-click (independent, instant toggle)
+                        instead of a raw checkbox tied into the form's phx-change.
+                        A hidden input keeps the current value in sync for save_property.
+                      -->
+                      <input type="hidden" name="property[wifi]" value={@form_data["wifi"]} />
+                      <div
+                        role="button"
+                        tabindex="0"
+                        phx-click="toggle_feature"
+                        phx-value-feature="wifi"
+                        class={@prk <> if(@form_data["wifi"] == "true", do: "border-blue-500 bg-blue-500/10 text-blue-400", else: "border-zinc-800 bg-zinc-950/20 text-zinc-500 hover:border-zinc-700")}
+                      >
+                        <svg class="w-5 h-5 mb-1.5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M8.284 16.284A3 3 0 0012 17a3 3 0 003.716-.716M5.456 13.456a7 7 0 019.088 0M2.628 10.628a11 11 0 0114.744 0M12 21v-1.5" />
+                        </svg>
+                        <span class="text-xs font-medium tracking-wide">WiFi Access</span>
+                      </div>
+
+                      <input type="hidden" name="property[tv]" value={@form_data["tv"]} />
+                      <div
+                        role="button"
+                        tabindex="0"
+                        phx-click="toggle_feature"
+                        phx-value-feature="tv"
+                        class={@prk <> if(@form_data["tv"] == "true", do: "border-blue-500 bg-blue-500/10 text-blue-400", else: "border-zinc-800 bg-zinc-950/20 text-zinc-500 hover:border-zinc-700")}
+                      >
+                        <svg class="w-5 h-5 mb-1.5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M6 20.25h12m-7.5-3v3m3-3v3m-10.125-3h17.25c.621 0 1.125-.504 1.125-1.125V4.875c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125z" />
+                        </svg>
+                        <span class="text-xs font-medium tracking-wide">Smart TV</span>
+                      </div>
+
+                      <input type="hidden" name="property[music_system]" value={@form_data["music_system"]} />
+                      <div
+                        role="button"
+                        tabindex="0"
+                        phx-click="toggle_feature"
+                        phx-value-feature="music_system"
+                        class={@prk <> if(@form_data["music_system"] == "true", do: "border-blue-500 bg-blue-500/10 text-blue-400", else: "border-zinc-800 bg-zinc-950/20 text-zinc-500 hover:border-zinc-700")}
+                      >
+                        <svg class="w-5 h-5 mb-1.5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M19.114 5.636a9 9 0 010 12.728M16.463 8.288a5.25 5.25 0 010 7.424M6.75 8.25l4.72-4.72a.75.75 0 011.28.53v15.88a.75.75 0 01-1.28.53l-4.72-4.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.01 9.01 0 012.25 12c0-.83.112-1.633.322-2.396C2.806 8.756 3.63 8.25 4.51 8.25H6.75z" />
+                        </svg>
+                        <span class="text-xs font-medium tracking-wide">Sound Stack</span>
+                      </div>
                     </div>
                   </div>
                   <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -354,6 +454,7 @@ defmodule HomeWeb.Admin.DashboardLive do
                           name="property[unavailable_until]"
                           value={@form_data["unavailable_until"]}
                           style="color-scheme: dark;"
+                          required
                           class={@inp <> " cursor-pointer"}
                         />
                       </div>
@@ -366,8 +467,7 @@ defmodule HomeWeb.Admin.DashboardLive do
                     >
                       <.live_file_input
                         upload={@uploads.property_images}
-                        style="display: none;"
-                        multiple
+                        class="hidden"
                       />
                       <span class="text-xs font-semibold text-blue-400 block py-4">
                         📂 Click here or drag files to select unit photos
@@ -376,7 +476,7 @@ defmodule HomeWeb.Admin.DashboardLive do
                   </div>
                   <button
                     type="submit"
-                    class="w-full bg-blue-600 hover:bg-blue-500 py-3 rounded-xl font-medium transition-all"
+                    class="w-full bg-blue-600 hover:bg-blue-500 py-3 rounded-xl font-medium transition-all shadow-lg shadow-blue-600/10"
                   >
                     Post
                   </button>
@@ -438,24 +538,37 @@ defmodule HomeWeb.Admin.DashboardLive do
                       <h4 class="text-xl font-bold text-white truncate">
                         {@form_data["title"] |> fill_blank("Untitled Property")}
                       </h4>
-                      <p class="text-zinc-400 text-sm mt-1">
-                        📍 {@form_data["location"] |> fill_blank("Location unassigned")}
+                      <p class="text-zinc-400 text-sm mt-1 flex items-center gap-1">
+                        <svg class="w-3.5 h-3.5 text-zinc-500" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                        </svg>
+                        <span>{@form_data["location"] |> fill_blank("Location unassigned")}</span>
                       </p>
                     </div>
                     <div class="flex flex-wrap gap-1.5">
                       <%= if @form_data["wifi"] == "true" do %>
-                        <span class="bg-zinc-950 text-zinc-400 text-[10px] px-2 py-1 rounded-md border border-zinc-800">
-                          📶 WiFi
+                        <span class="bg-zinc-950 text-zinc-400 text-[10px] px-2 py-1 rounded-md border border-zinc-800 flex items-center gap-1">
+                          <svg class="w-3 h-3 text-blue-400" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M8.284 16.284A3 3 0 0012 17a3 3 0 003.716-.716M5.456 13.456a7 7 0 019.088 0M2.628 10.628a11 11 0 0114.744 0M12 21v-1.5" />
+                          </svg>
+                          <span>WiFi Access</span>
                         </span>
                       <% end %>
                       <%= if @form_data["tv"] == "true" do %>
-                        <span class="bg-zinc-950 text-zinc-400 text-[10px] px-2 py-1 rounded-md border border-zinc-800">
-                          📺 Smart TV
+                        <span class="bg-zinc-950 text-zinc-400 text-[10px] px-2 py-1 rounded-md border border-zinc-800 flex items-center gap-1">
+                          <svg class="w-3 h-3 text-blue-400" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M6 20.25h12m-7.5-3v3m3-3v3m-10.125-3h17.25c.621 0 1.125-.504 1.125-1.125V4.875c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125z" />
+                          </svg>
+                          <span>Smart TV</span>
                         </span>
                       <% end %>
                       <%= if @form_data["music_system"] == "true" do %>
-                        <span class="bg-zinc-950 text-zinc-400 text-[10px] px-2 py-1 rounded-md border border-zinc-800">
-                          🔊 Sound System
+                        <span class="bg-zinc-950 text-zinc-400 text-[10px] px-2 py-1 rounded-md border border-zinc-800 flex items-center gap-1">
+                          <svg class="w-3 h-3 text-blue-400" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M19.114 5.636a9 9 0 010 12.728M16.463 8.288a5.25 5.25 0 010 7.424M6.75 8.25l4.72-4.72a.75.75 0 011.28.53v15.88a.75.75 0 01-1.28.53l-4.72-4.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.01 9.01 0 012.25 12c0-.83.112-1.633.322-2.396C2.806 8.756 3.63 8.25 4.51 8.25H6.75z" />
+                          </svg>
+                          <span>Sound Stack</span>
                         </span>
                       <% end %>
                     </div>
@@ -479,7 +592,7 @@ defmodule HomeWeb.Admin.DashboardLive do
                     <div class="h-44 bg-zinc-950 overflow-hidden relative">
                       <%= if img = List.first(property.property_images) do %>
                         <img src={img.image_url} class="w-full h-full object-cover" />
-                      <% else %>
+                      <%= else %>
                         <div class="w-full h-full bg-zinc-900 flex items-center justify-center text-xs text-zinc-600">
                           No Image Attached
                         </div>
@@ -548,56 +661,4 @@ defmodule HomeWeb.Admin.DashboardLive do
     </div>
     """
   end
-
-  defp upload_to_cloudinary(local_path) do
-    config = Application.get_env(:home, :cloudinary)
-    timestamp = DateTime.utc_now() |> DateTime.to_unix()
-
-    signature =
-      :crypto.hash(:sha, "timestamp=#{timestamp}#{config[:api_secret]}")
-      |> Base.encode16(case: :lower)
-
-    url = "https://api.cloudinary.com/v1_1/#{config[:cloud_name]}/image/upload"
-    boundary = "----PhoenixLiveViewUploadBoundary#{timestamp}"
-
-    {:ok, file_binary} = File.read(local_path)
-
-    body = [
-      "--#{boundary}\r\nContent-Disposition: form-data; name=\"api_key\"\r\n\r\n#{config[:api_key]}\r\n",
-      "--#{boundary}\r\nContent-Disposition: form-data; name=\"timestamp\"\r\n\r\n#{timestamp}\r\n",
-      "--#{boundary}\r\nContent-Disposition: form-data; name=\"signature\"\r\n\r\n#{signature}\r\n",
-      "--#{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"upload.jpg\"\r\nContent-Type: image/jpeg\r\n\r\n",
-      file_binary,
-      "\r\n--#{boundary}--\r\n"
-    ]
-
-    case :httpc.request(
-           :post,
-           {String.to_charlist(url), [],
-            String.to_charlist("multipart/form-data; boundary=#{boundary}"), body},
-           [],
-           []
-         ) do
-      {:ok, {{_, 200, _}, _, response}} -> {:ok, Map.get(Jason.decode!(response), "secure_url")}
-      _ -> {:error, "Upload failed"}
-    end
-  end
-
-  defp default_form_data do
-    %{
-      "title" => "",
-      "location" => "",
-      "night_price" => "",
-      "day_price" => "",
-      "tier" => "Normal",
-      "wifi" => "false",
-      "tv" => "false",
-      "music_system" => "false",
-      "status" => "Available",
-      "unavailable_until" => ""
-    }
-  end
-
-  defp fill_blank(val, fallback),
-    do: if(is_nil(val) || String.trim(val) == "", do: fallback, else: val)
 end
