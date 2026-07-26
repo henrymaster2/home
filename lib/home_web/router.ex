@@ -25,6 +25,7 @@ defmodule HomeWeb.Router do
     live "/admin/property", Admin.PropertyLive
     live "/admin/bookings", Admin.BookingsLive
     live "/admin/notifications", Admin.Notifications
+    live "/profile", ProfileLive
   end
 
   # Other scopes may use custom stacks.

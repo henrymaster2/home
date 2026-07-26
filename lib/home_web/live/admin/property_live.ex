@@ -310,7 +310,7 @@ defmodule HomeWeb.Admin.PropertyLive do
                         Edit Rates (KES)
                       </label>
                       <form phx-submit="update_prices" class="grid grid-cols-2 gap-2">
-                        <input type="hidden" name="id" value={property.id} />
+                        <input type="hidden" name="_id" value={property.id} />
 
                         <div class="bg-zinc-950 p-2 rounded-xl border border-zinc-800 focus-within:border-blue-500/50 transition-all">
                           <span class="block text-[8px] uppercase font-bold text-zinc-500 tracking-wider">
@@ -365,7 +365,7 @@ defmodule HomeWeb.Admin.PropertyLive do
                       </label>
 
                       <form phx-submit="update_status" class="space-y-2.5">
-                        <input type="hidden" name="id" value={property.id} />
+                        <input type="hidden" name="_id" value={property.id} />
 
                         <div class="relative">
                           <select

@@ -592,7 +592,7 @@ defmodule HomeWeb.Admin.DashboardLive do
                     <div class="h-44 bg-zinc-950 overflow-hidden relative">
                       <%= if img = List.first(property.property_images) do %>
                         <img src={img.image_url} class="w-full h-full object-cover" />
-                      <%= else %>
+                      <% else %>
                         <div class="w-full h-full bg-zinc-900 flex items-center justify-center text-xs text-zinc-600">
                           No Image Attached
                         </div>

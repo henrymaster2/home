@@ -1,7 +1,5 @@
 // service-worker.js
 
-const { cache } = require("react");
-
 const CACHE_NAME = "home-cache-v2";
 
 // Files that are safe to cache.
@@ -51,21 +49,28 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  //fetch static assets: Try network first, fall back to cache if offline
+  // Cache static assets only.
   event.respondWith(
-    fetch(event.request)
-    .then((networkResponse) => {
-      if (event.request.method === "GET" && networkResponse.status === 200) {
-        const resopnseClone = networkResponse.clone();
-        caches.open(CACHE_NAME).then((cache) => {
-          cache.put(event.request, responseClone);
-        });
+    caches.match(event.request).then((cachedResponse) => {
+      if (cachedResponse) {
+        return cachedResponse;
       }
-      return networkResponse;
-    })
-    .cache(() => {
-      // if network fails(e.g., offline), serve from cache 
-      return caches.match(event.request);
+
+      return fetch(event.request).then((networkResponse) => {
+        // Only cache successful GET requests.
+        if (
+          event.request.method === "GET" &&
+          networkResponse.status === 200
+        ) {
+          const responseClone = networkResponse.clone();
+
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(event.request, responseClone);
+          });
+        }
+
+        return networkResponse;
+      });
     })
   );
 });
