@@ -1,38 +1,38 @@
 // service-worker.js
 
-const { cache } = require("react");
+const CACHE_NAME = "home-cache-v3";
 
-const CACHE_NAME = "home-cache-v2";
-
-// Files that are safe to cache.
-// DO NOT cache "/" or any HTML pages during development.
-const urlsToCache = [
-  "/favicon.ico"
+// Files to cache during installation
+const STATIC_ASSETS = [
+  "/favicon.ico",
+  "/manifest.json",
+  "/images/icon-192.png",
+  "/images/icon-512.png"
 ];
 
-// Install the service worker
+// Install
 self.addEventListener("install", (event) => {
-  console.log("Service Worker Installed");
+  console.log("Service Worker: Installed");
 
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(urlsToCache);
+      return cache.addAll(STATIC_ASSETS);
     })
   );
 
   self.skipWaiting();
 });
 
-// Activate the service worker
+// Activate
 self.addEventListener("activate", (event) => {
-  console.log("Service Worker Activated");
+  console.log("Service Worker: Activated");
 
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(
-        cacheNames.map((cache) => {
-          if (cache !== CACHE_NAME) {
-            return caches.delete(cache);
+        cacheNames.map((cacheName) => {
+          if (cacheName !== CACHE_NAME) {
+            return caches.delete(cacheName);
           }
         })
       );
@@ -42,30 +42,53 @@ self.addEventListener("activate", (event) => {
   self.clients.claim();
 });
 
-// Fetch requests
+// Fetch
 self.addEventListener("fetch", (event) => {
-  // Never cache HTML pages.
-  // Always request them from Phoenix.
-  if (event.request.mode === "navigate") {
-    event.respondWith(fetch(event.request));
+  // Only handle GET requests
+  if (event.request.method !== "GET") {
     return;
   }
 
-  //fetch static assets: Try network first, fall back to cache if offline
+  // Always fetch HTML pages from the network
+  if (event.request.mode === "navigate") {
+    event.respondWith(
+      fetch(event.request).catch(() => {
+        return caches.match("/");
+      })
+    );
+
+    return;
+  }
+
+  // Cache-first strategy for static assets
   event.respondWith(
-    fetch(event.request)
-    .then((networkResponse) => {
-      if (event.request.method === "GET" && networkResponse.status === 200) {
-        const resopnseClone = networkResponse.clone();
-        caches.open(CACHE_NAME).then((cache) => {
-          cache.put(event.request, responseClone);
-        });
+    caches.match(event.request).then((cachedResponse) => {
+      if (cachedResponse) {
+        return cachedResponse;
       }
-      return networkResponse;
-    })
-    .cache(() => {
-      // if network fails(e.g., offline), serve from cache 
-      return caches.match(event.request);
+
+      return fetch(event.request)
+        .then((networkResponse) => {
+          // Ignore invalid responses
+          if (
+            !networkResponse ||
+            networkResponse.status !== 200 ||
+            networkResponse.type !== "basic"
+          ) {
+            return networkResponse;
+          }
+
+          const responseClone = networkResponse.clone();
+
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(event.request, responseClone);
+          });
+
+          return networkResponse;
+        })
+        .catch(() => {
+          return caches.match(event.request);
+        });
     })
   );
 });
