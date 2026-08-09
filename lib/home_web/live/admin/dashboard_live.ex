@@ -284,6 +284,7 @@ defmodule HomeWeb.Admin.DashboardLive do
                 Soon
               </span>
             </.link>
+
           </nav>
         </div>
       </aside>

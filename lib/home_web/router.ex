@@ -21,11 +21,12 @@ defmodule HomeWeb.Router do
     pipe_through :browser
     get "/", PageController, :home
     live "/admin", Admin.DashboardLive
-    live "/test", TestLive
     live "/admin/property", Admin.PropertyLive
     live "/admin/bookings", Admin.BookingsLive
     live "/admin/notifications", Admin.Notifications
     live "/profile", ProfileLive
+    live "/test-house", Text.Test
+    live "/houses/:id", HomeWeb.HouseDetailLive
   end
 
   # Other scopes may use custom stacks.

@@ -24,12 +24,22 @@ import {Socket} from "phoenix"
 import {LiveSocket} from "phoenix_live_view"
 import {hooks as colocatedHooks} from "phoenix-colocated/home"
 import topbar from "../vendor/topbar"
+import { HouseSlideshow } from "./hooks/house_slideshow"
+import { HouseCardCycle } from "./hooks/house_card_cycle"
 
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
+
+// Combine existing colocated hooks with the custom HouseSlideshow hook
+const hooks = {
+  ...colocatedHooks,
+  HouseSlideshow: HouseSlideshow,
+  HouseCardCycle: HouseCardCycle
+}
+
 const liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
   params: {_csrf_token: csrfToken},
-  hooks: {...colocatedHooks},
+  hooks: hooks
 })
 
 // Show progress bar on live navigation and form submits
@@ -80,6 +90,7 @@ if (process.env.NODE_ENV === "development") {
     window.liveReloader = reloader
   })
 }
+
 // Register Service Worker for PWA
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
@@ -93,6 +104,7 @@ if ("serviceWorker" in navigator) {
       })
   })
 }
+
 // Request notification permission
 if ("Notification" in window) {
   Notification.requestPermission().then(permission => {
