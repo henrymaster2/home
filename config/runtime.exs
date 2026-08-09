@@ -39,7 +39,10 @@ if config_env() == :prod do
 
   config :home, Home.Repo,
     socket_options: maybe_ipv6,
-    ssl: true
+    ssl: true,
+    ssl_opts: [
+      verify: :verify_none,
+    ]
 
   secret_key_base =
     System.get_env("SECRET_KEY_BASE") ||
