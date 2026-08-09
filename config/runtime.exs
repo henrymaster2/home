@@ -1,11 +1,13 @@
 import Config
 
 # Load environment variables from .env file for local development
-source = Dotenvy.source!([".env"])
+if config_env() != :prod do
+  source = Dotenvy.source!([".env"])
 
-Enum.each(source, fn {key, value} ->
-  System.put_env(key, value)
-end)
+  Enum.each(source, fn {key, value} ->
+    System.put_env(key, value)
+  end)
+end
 
 # --- Database Configuration (Runs in ALL environments) ---
 config :home, Home.Repo,
