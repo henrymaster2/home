@@ -116,3 +116,37 @@ if (Notification.permission === "granted") {
     body: "PWA notifications are working 🎉",
   })
 }
+let deferredPrompt = null;
+
+window.addEventListener("beforeinstallprompt", (event) => {
+  console.log("PWA install prompt available");
+
+  event.preventDefault();
+  deferredPrompt = event;
+
+  const installButton = document.getElementById("install-pwa");
+
+  if (installButton) {
+    installButton.hidden = false;
+  }
+});
+
+document.addEventListener("click", async (event) => {
+  if (event.target.id !== "install-pwa") {
+    return;
+  }
+
+  if (!deferredPrompt) {
+    console.log("PWA install prompt is not available");
+    return;
+  }
+
+  deferredPrompt.prompt();
+
+  const { outcome } = await deferredPrompt.userChoice;
+
+  console.log("PWA installation result:", outcome);
+
+  deferredPrompt = null;
+  event.target.hidden = true;
+});
