@@ -8,16 +8,15 @@ defmodule HomeWeb.Admin.Notifications do
   def render(assigns) do
     ~H"""
     <div>
-  <h1>Notification Page</h1>
+    <h1>Notification Page</h1>
 
-  <button
+     <button
     id="install-pwa"
-    hidden
-    class="mt-4 rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
-  >
+    class="mt-4 rounded-lg bg-blue-600 px-4 py-2 text-white"
+    >
     Install Home App
-  </button>
-</div>
+    </button>
+      </div>
     """
   end
 end
