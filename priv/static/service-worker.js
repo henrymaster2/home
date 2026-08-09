@@ -1,18 +1,14 @@
-// service-worker.js
+const CACHE_NAME = "home-pwa-v1";
 
-const CACHE_NAME = "home-cache-v3";
-
-// Files to cache during installation
 const STATIC_ASSETS = [
-  "/favicon.ico",
   "/manifest.json",
+  "/favicon.ico",
   "/images/icon-192.png",
   "/images/icon-512.png"
 ];
 
-// Install
 self.addEventListener("install", (event) => {
-  console.log("Service Worker: Installed");
+  console.log("[SW] Installing...");
 
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
@@ -23,18 +19,15 @@ self.addEventListener("install", (event) => {
   self.skipWaiting();
 });
 
-// Activate
 self.addEventListener("activate", (event) => {
-  console.log("Service Worker: Activated");
+  console.log("[SW] Activating...");
 
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(
-        cacheNames.map((cacheName) => {
-          if (cacheName !== CACHE_NAME) {
-            return caches.delete(cacheName);
-          }
-        })
+        cacheNames
+          .filter((cacheName) => cacheName !== CACHE_NAME)
+          .map((cacheName) => caches.delete(cacheName))
       );
     })
   );
@@ -42,14 +35,11 @@ self.addEventListener("activate", (event) => {
   self.clients.claim();
 });
 
-// Fetch
 self.addEventListener("fetch", (event) => {
-  // Only handle GET requests
   if (event.request.method !== "GET") {
     return;
   }
 
-  // Always fetch HTML pages from the network
   if (event.request.mode === "navigate") {
     event.respondWith(
       fetch(event.request).catch(() => {
@@ -60,35 +50,29 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Cache-first strategy for static assets
   event.respondWith(
     caches.match(event.request).then((cachedResponse) => {
       if (cachedResponse) {
         return cachedResponse;
       }
 
-      return fetch(event.request)
-        .then((networkResponse) => {
-          // Ignore invalid responses
-          if (
-            !networkResponse ||
-            networkResponse.status !== 200 ||
-            networkResponse.type !== "basic"
-          ) {
-            return networkResponse;
-          }
-
-          const responseClone = networkResponse.clone();
-
-          caches.open(CACHE_NAME).then((cache) => {
-            cache.put(event.request, responseClone);
-          });
-
+      return fetch(event.request).then((networkResponse) => {
+        if (
+          !networkResponse ||
+          networkResponse.status !== 200 ||
+          networkResponse.type !== "basic"
+        ) {
           return networkResponse;
-        })
-        .catch(() => {
-          return caches.match(event.request);
+        }
+
+        const responseClone = networkResponse.clone();
+
+        caches.open(CACHE_NAME).then((cache) => {
+          cache.put(event.request, responseClone);
         });
+
+        return networkResponse;
+      });
     })
   );
 });
