@@ -6,7 +6,27 @@ defmodule Home.Accounts do
   import Ecto.Query, warn: false
   alias Home.Repo
 
-  alias Home.Accounts.{User, UserToken, UserNotifier}
+  alias Home.Accounts.{User, UserToken, UserNotifier, UserIdentity}
+
+  @doc """
+  Returns an '%Ecto.Changeset{}' for tracking user registration changes.
+  """
+  def change_user_registration(%User{} = user, attrs \\ %{}) do
+    User.registration_changeset(user, attrs, validate_unique: false)
+  end
+
+  def change_user_login(user, attrs \\ %{}) do
+    User.change_user_login(user, attrs)
+  end
+
+  @doc """
+  Registers a user in the database
+  """
+  def register_user(attrs) do
+    %User{}
+    |> User.registration_changeset(attrs)
+    |> Repo.insert()
+  end
 
   ## Database getters
 
@@ -26,6 +46,70 @@ defmodule Home.Accounts do
     Repo.get_by(User, email: email)
   end
 
+  #for finding user and creating if no one this is for sign in by google
+  def find_or_create_google_user(google_user) do
+  google_id = google_user["sub"]
+  email = google_user["email"]
+
+
+  case Repo.get_by(UserIdentity, provider: "google", provider_user_id: google_id) do
+   %UserIdentity{user_id: user_id} ->
+  {:ok, get_user!(user_id)}
+
+    nil ->
+      case get_user_by_email(email) do
+        %User{} = user ->
+          create_google_identity(user, google_id)
+
+        nil ->
+          create_google_user(google_user, google_id)
+      end
+  end
+end
+
+## for creating google identity
+
+ defp create_google_identity(user, google_id) do
+  %UserIdentity{}
+  |> UserIdentity.changeset(%{
+    provider: "google",
+    provider_user_id: google_id,
+    user_id: user.id
+  })
+  |> Repo.insert()
+  |> case do
+    {:ok, _identity} -> user
+    {:error, changeset} -> {:error, changeset}
+  end
+end
+
+## for creating the user
+defp create_google_user(google_user, google_id) do
+  Repo.transact(fn ->
+    with {:ok, user} <-
+           %User{}
+           |> User.registration_changeset(%{
+             names: google_user["name"],
+             email: google_user["email"],
+             confirmed_at: DateTime.utc_now()
+           })
+           |> Repo.insert(),
+         {:ok, _identity} <-
+           %UserIdentity{}
+           |> UserIdentity.changeset(%{
+             provider: "google",
+             provider_user_id: google_id,
+             user_id: user.id
+           })
+           |> Repo.insert() do
+      {:ok, user}
+    else
+      {:error, changeset} ->
+        {:error, changeset}
+    end
+  end)
+end
+
   @doc """
   Gets a user by email and password.
 
@@ -41,6 +125,10 @@ defmodule Home.Accounts do
   def get_user_by_email_and_password(email, password)
       when is_binary(email) and is_binary(password) do
     user = Repo.get_by(User, email: email)
+
+    IO.inspect(user, label: "USER FROM DATABASE")
+    IO.inspect(User.valid_password?(user, password), label: "PASSWORD VALID?")
+
     if User.valid_password?(user, password), do: user
   end
 
@@ -59,28 +147,6 @@ defmodule Home.Accounts do
 
   """
   def get_user!(id), do: Repo.get!(User, id)
-
-  ## User registration
-
-  @doc """
-  Registers a user.
-
-  ## Examples
-
-      iex> register_user(%{field: value})
-      {:ok, %User{}}
-
-      iex> register_user(%{field: bad_value})
-      {:error, %Ecto.Changeset{}}
-
-  """
-  def register_user(attrs) do
-    %User{}
-    |> User.email_changeset(attrs)
-    |> Repo.insert()
-  end
-
-  ## Settings
 
   @doc """
   Checks whether the user is in sudo mode.

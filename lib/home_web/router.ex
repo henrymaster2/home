@@ -20,13 +20,25 @@ defmodule HomeWeb.Router do
   scope "/", HomeWeb do
     pipe_through :browser
     get "/", PageController, :home
-    live "/admin", Admin.DashboardLive
-    live "/admin/property", Admin.PropertyLive
-    live "/admin/bookings", Admin.BookingsLive
+    # live "/admin", Admin.DashboardLive
+    # live "/admin/property", Admin.PropertyLive
+    # live "/admin/bookings", Admin.BookingsLive
     live "/admin/notifications", Admin.Notifications
     live "/profile", ProfileLive
-    live "/test-house", Text.Test
-    live "/houses/:id", HomeWeb.HouseDetailLive
+    live "/housedetail", HouseDetailLive
+    post "/users/log_in", UserSessionController, :create
+    delete "/users/log_out", UserSessionController, :delete
+    live "/house", Ownerdash, :index
+    get "/auth/google", GoogleAuthController, :request
+    get "/auth/google/callback", GoogleAuthController, :callback
+  end
+
+  scope "/", HomeWeb do
+    pipe_through [:browser, :require_authenticated_user]
+
+    live "/admin", Admin.DashboardLive
+    live "/admin/bookings", Admin.BookingsLive
+    live "/admin/property", Admin.PropertyLive
   end
 
   # Other scopes may use custom stacks.
@@ -73,6 +85,8 @@ defmodule HomeWeb.Router do
       live "/users/register", UserLive.Registration, :new
       live "/users/log-in", UserLive.Login, :new
       live "/users/log-in/:token", UserLive.Confirmation, :new
+      live "/test-house", Text.Test
+      live "/test", Text.Test
     end
 
     post "/users/log-in", UserSessionController, :create

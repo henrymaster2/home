@@ -1,7 +1,7 @@
 import Config
 
 # Load environment variables from .env file for local development
-if config_env() != :prod do
+if config_env() == :dev do
   source = Dotenvy.source!([".env"])
 
   Enum.each(source, fn {key, value} ->
@@ -10,9 +10,11 @@ if config_env() != :prod do
 end
 
 # --- Database Configuration (Runs in ALL environments) ---
-config :home, Home.Repo,
-  url: System.get_env("DATABASE_URL"),
-  pool_size: String.to_integer(System.get_env("POOL_SIZE") || "10")
+if config_env() != :test do
+  config :home, Home.Repo,
+    url: System.get_env("DATABASE_URL"),
+    pool_size: String.to_integer(System.get_env("POOL_SIZE") || "10")
+end
 
 # --- Cloudinary Configuration ---
 config :home, :cloudinary,
@@ -24,11 +26,13 @@ if System.get_env("PHX_SERVER") do
   config :home, HomeWeb.Endpoint, server: true
 end
 
-config :home, HomeWeb.Endpoint,
-  http: [
-    ip: {0, 0, 0, 0},
-    port: String.to_integer(System.get_env("PORT", "4000"))
-  ]
+if config_env() != :test do
+  config :home, HomeWeb.Endpoint,
+    http: [
+      ip: {0, 0, 0, 0},
+      port: String.to_integer(System.get_env("PORT", "4000"))
+    ]
+end
 
 if config_env() == :prod do
   # Keep only prod-specific additions here (like SSL and IPv6 handling)
@@ -41,7 +45,7 @@ if config_env() == :prod do
     socket_options: maybe_ipv6,
     ssl: true,
     ssl_opts: [
-      verify: :verify_none,
+      verify: :verify_none
     ]
 
   secret_key_base =
@@ -55,3 +59,8 @@ if config_env() == :prod do
     url: [host: host, port: 443, scheme: "https"],
     secret_key_base: secret_key_base
 end
+
+#google auth
+config :home, :google_oauth,
+  client_id: System.get_env("GOOGLE_CLIENT_ID"),
+  client_secret: System.get_env("GOOGLE_CLIENT_SECRET")

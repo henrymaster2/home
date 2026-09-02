@@ -26,6 +26,7 @@ import {hooks as colocatedHooks} from "phoenix-colocated/home"
 import topbar from "../vendor/topbar"
 import { HouseSlideshow } from "./hooks/house_slideshow"
 import { HouseCardCycle } from "./hooks/house_card_cycle"
+import { HouseFinder } from "./hooks/house_finder"
 
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 
@@ -33,7 +34,8 @@ const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute
 const hooks = {
   ...colocatedHooks,
   HouseSlideshow: HouseSlideshow,
-  HouseCardCycle: HouseCardCycle
+  HouseCardCycle: HouseCardCycle,
+  HouseFinder: HouseFinder
 }
 
 const liveSocket = new LiveSocket("/live", Socket, {
@@ -111,12 +113,12 @@ if ("Notification" in window) {
     console.log("Notification permission:", permission)
   })
 }
-if (Notification.permission === "granted") {
-  new Notification("Home", {
-    body: "PWA notifications are working 🎉",
-  })
-}
-let deferredPrompt = null;
+// if (Notification.permission === "granted") {
+//   new Notification("Home", {
+//     body: "PWA notifications are working 🎉",
+//   })
+// }
+// let deferredPrompt = null;
 
 window.addEventListener("beforeinstallprompt", (event) => {
   console.log("PWA install prompt available");

@@ -77,7 +77,7 @@ defmodule Home.Bookings do
   def create_booking(%Scope{} = scope, attrs) do
     with {:ok, booking = %Booking{}} <-
            %Booking{}
-           |> Booking.changeset(%Booking{}, attrs)
+           |> Booking.changeset(attrs, scope)
            |> Repo.insert() do
       broadcast_booking(scope, {:created, booking})
       {:ok, booking}
@@ -101,7 +101,7 @@ defmodule Home.Bookings do
 
     with {:ok, booking = %Booking{}} <-
            booking
-           |> Booking.changeset(booking, attrs)
+           |> Booking.changeset(attrs, scope)
            |> Repo.update() do
       broadcast_booking(scope, {:updated, booking})
       {:ok, booking}

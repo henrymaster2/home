@@ -4,6 +4,7 @@ defmodule Home.Properties.PropertyImage do
 
   schema "property_images" do
     field :image_url, :string
+    belongs_to :user, Home.Accounts.User
     belongs_to :property, Home.Properties.Property
 
     timestamps()
@@ -13,5 +14,11 @@ defmodule Home.Properties.PropertyImage do
     property_image
     |> cast(attrs, [:image_url, :property_id])
     |> validate_required([:image_url])
+  end
+
+  def changeset(property_image, attrs, scope) do
+    property_image
+    |> changeset(attrs)
+    |> put_change(:user_id, scope.user.id)
   end
 end

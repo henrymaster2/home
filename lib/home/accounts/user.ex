@@ -1,15 +1,41 @@
 defmodule Home.Accounts.User do
   use Ecto.Schema
   import Ecto.Changeset
+  alias Home.Accounts.UserIdentity
 
   schema "users" do
+    field :names, :string
     field :email, :string
+    field :phone, :string
     field :password, :string, virtual: true, redact: true
     field :hashed_password, :string, redact: true
     field :confirmed_at, :utc_datetime
     field :authenticated_at, :utc_datetime, virtual: true
-
+    has_many :identities, UserIdentity
     timestamps(type: :utc_datetime)
+  end
+
+  @doc """
+  A user changeset for registering a new account.
+  """
+  def registration_changeset(user, attrs, opts \\ []) do
+    user
+    |> cast(attrs, [:names, :phone])
+    |> validate_required([:names, :phone])
+    |> validate_length(:names, min: 2, max: 100)
+    |> validate_length(:phone, min: 10, max: 15)
+    |> email_changeset(attrs, opts)
+    |> password_changeset(attrs, opts)
+  end
+
+  def login_changeset(user, attrs \\ %{}) do
+    user
+    |> cast(attrs, [:email, :password])
+    |> validate_required([:email, :password])
+  end
+
+  def change_user_login(%Home.Accounts.User{} = user, attrs \\ %{}) do
+    login_changeset(user, attrs)
   end
 
   @doc """
@@ -23,8 +49,8 @@ defmodule Home.Accounts.User do
       uniqueness of the email, useful when displaying live validations.
       Defaults to `true`.
   """
-  def email_changeset(user, attrs, opts \\ []) do
-    user
+  def email_changeset(user_or_changeset, attrs, opts \\ []) do
+    user_or_changeset
     |> cast(attrs, [:email])
     |> validate_email(opts)
   end
@@ -71,8 +97,8 @@ defmodule Home.Accounts.User do
       validations on a LiveView form), this option can be set to `false`.
       Defaults to `true`.
   """
-  def password_changeset(user, attrs, opts \\ []) do
-    user
+  def password_changeset(user_or_changeset, attrs, opts \\ []) do
+    user_or_changeset
     |> cast(attrs, [:password])
     |> validate_confirmation(:password, message: "does not match password")
     |> validate_password(opts)
@@ -81,7 +107,7 @@ defmodule Home.Accounts.User do
   defp validate_password(changeset, opts) do
     changeset
     |> validate_required([:password])
-    |> validate_length(:password, min: 12, max: 72)
+    |> validate_length(:password, min: 6, max: 72)
     # Examples of additional password validation:
     # |> validate_format(:password, ~r/[a-z]/, message: "at least one lower case character")
     # |> validate_format(:password, ~r/[A-Z]/, message: "at least one upper case character")

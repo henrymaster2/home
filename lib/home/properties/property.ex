@@ -14,6 +14,7 @@ defmodule Home.Properties.Property do
     field :status, :string, default: "Available"
     field :unavailable_until, :naive_datetime
 
+    belongs_to :user, Home.Accounts.User
     has_many :property_images, Home.Properties.PropertyImage
 
     timestamps()
@@ -34,5 +35,11 @@ defmodule Home.Properties.Property do
       :unavailable_until
     ])
     |> validate_required([:title, :location, :night_price])
+  end
+
+  def changeset(property, attrs, scope) do
+    property
+    |> changeset(attrs)
+    |> put_change(:user_id, scope.user.id)
   end
 end

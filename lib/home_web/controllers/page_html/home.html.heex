@@ -5,10 +5,8 @@
 </style>
 
 <div class="min-h-screen bg-gradient-to-b from-zinc-950 via-slate-900 to-zinc-950 text-zinc-100 antialiased pb-36 select-none">
-  
   <header class="sticky top-0 z-40 bg-zinc-950/70 backdrop-blur-xl border-b border-zinc-900/80 px-4 py-4 sm:px-8 transition-all duration-300">
     <div class="max-w-7xl mx-auto flex flex-col sm:flex-row gap-4 items-center justify-between">
-      
       <div class="hidden md:flex items-center gap-2.5">
         <span class="bg-gradient-to-br from-blue-500 to-indigo-600 text-white p-2.5 rounded-2xl shadow-lg shadow-blue-500/10 text-xs">
           🏠
@@ -74,7 +72,6 @@
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 sm:gap-8">
       <%= for property <- @properties do %>
         <div class="group relative flex flex-col bg-zinc-900/30 border border-zinc-800/60 rounded-[2rem] overflow-hidden transition-all duration-300 hover:border-zinc-700/60 hover:bg-zinc-900/50 shadow-xl shadow-black/20 hover:shadow-blue-950/10">
-          
           <div class="relative aspect-[4/3] w-full overflow-hidden bg-zinc-950/80 rounded-[1.75rem] m-2 mx-auto max-w-[calc(100%-16px)]">
             <div class="no-scrollbar carousel-snap flex w-full h-full overflow-x-auto scroll-smooth">
               <%= if property.property_images != [] do %>
@@ -196,7 +193,6 @@
 
   <div class="fixed bottom-6 left-1/2 -translate-x-1/2 w-[90%] sm:max-w-xs z-50 transition-transform duration-300">
     <nav class="flex items-center justify-around bg-zinc-900/80 backdrop-blur-2xl border border-zinc-800 rounded-full px-4 py-3 shadow-2xl shadow-black/90">
-      
       <button class="flex flex-col items-center gap-1 text-blue-400 group focus:outline-none">
         <svg
           xmlns="http://www.w3.org/2000/svg"

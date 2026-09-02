@@ -1,9 +1,64 @@
 @import "tailwindcss";
-@source "./css";
+@source "../css";
 @source "../js";
 @source "../../lib/home_web";
+@import url('https://fonts.googleapis.com/css2?family=Caveat:wght@600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,600;1,400&display=swap');
 
-body {
+/* body {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%) !important;
   min-height: 100vh;
+} */
+
+body {
+  /* Rich, subtle dark navy gradient based on your image #000435 */
+  background: linear-gradient(180deg, #010b42 0%, #000435 40%, #00021a 100%) !important;
+  min-height: 100vh;
+  color: #f3f4f6; /* Optional: Sets a clean, crisp off-white text default */
+}
+
+.handwritten-text {
+  font-family: 'Caveat', cursive;
+  display: inline-block;
+  white-space: nowrap;
+  overflow: hidden;
+  border-right: 2px solid var(--accent-1); /* Optional pen cursor */
+  animation: 
+    type-writer 2.5s steps(10, end) forwards,
+    blink-cursor 0.75s step-end infinite;
+}
+
+@keyframes type-writer {
+  from { width: 0; }
+  to { width: 100%; }
+}
+
+@keyframes blink-cursor {
+  from, to { border-color: transparent; }
+  50% { border-color: var(--accent-1); }
+}
+.editorial-brand {
+  font-family: 'Playfair Display', serif;
+  font-style: italic; /* Matches the flowing swash style in the image */
+  display: inline-block;
+  white-space: nowrap;
+  overflow: hidden;
+  border-right: none; /* Cursor explicitly removed */
+  animation: write-reveal 1.8s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+  
+}
+
+@keyframes write-reveal {
+  0% {
+    width: 0;
+    opacity: 0;
+    filter: blur(4px);
+    letter-spacing: 0.5em;
+  }
+  100% {
+    width: 100%;
+    opacity: 1;
+    filter: blur(0);
+    letter-spacing: 0.15em;
+  }
 }

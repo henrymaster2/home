@@ -274,21 +274,27 @@ defmodule HomeWeb.CoreComponents do
 
   # All other inputs text, datetime-local, url, password, etc. are handled here...
   def input(assigns) do
+    assigns = assign_new(assigns, :inner_block, fn -> [] end)
+
     ~H"""
     <div class="fieldset mb-2">
       <label>
         <span :if={@label} class="label mb-1">{@label}</span>
-        <input
-          type={@type}
-          name={@name}
-          id={@id}
-          value={Phoenix.HTML.Form.normalize_value(@type, @value)}
-          class={[
-            @class || "w-full input",
-            @errors != [] && (@error_class || "input-error")
-          ]}
-          {@rest}
-        />
+        <div class="relative w-full">
+          <input
+            type={@type}
+            name={@name}
+            id={@id}
+            value={Phoenix.HTML.Form.normalize_value(@type, @value)}
+            class={[
+              "w-full input",
+              @class,
+              @errors != [] && (@error_class || "input-error")
+            ]}
+            {@rest}
+          />
+          {render_slot(@inner_block)}
+        </div>
       </label>
       <.error :for={msg <- @errors}>{msg}</.error>
     </div>

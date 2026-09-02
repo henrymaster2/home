@@ -10,6 +10,7 @@ defmodule Home.Bookings.Booking do
     field :total_price, :integer
     field :status, :string, default: "Pending"
 
+    belongs_to :user, Home.Accounts.User
     belongs_to :property, Home.Properties.Property
 
     timestamps()
@@ -23,6 +24,7 @@ defmodule Home.Bookings.Booking do
       :check_in,
       :check_out,
       :total_price,
+      :status,
       :property_id
     ])
     |> validate_required([
@@ -33,5 +35,11 @@ defmodule Home.Bookings.Booking do
       :total_price,
       :property_id
     ])
+  end
+
+  def changeset(booking, attrs, scope) do
+    booking
+    |> changeset(attrs)
+    |> put_change(:user_id, scope.user.id)
   end
 end
