@@ -5,9 +5,30 @@ defmodule Home.Accounts do
 
   import Ecto.Query, warn: false
   alias Home.Repo
-
+  alias Home.Accounts.AdminLiteInvite
   alias Home.Accounts.{User, UserToken, UserNotifier, UserIdentity}
+  alias Home.Accounts.VerificationRequest
 
+ @pubsub Home.PubSub
+  @topic "verification_requests"
+
+  def subscribe_verification_requests do
+    Phoenix.PubSub.subscribe(@pubsub, @topic)
+  end
+
+ def create_verification_request(attrs) do
+    %VerificationRequest{}
+    |> VerificationRequest.changeset(attrs) # Explicitly module-scoped
+    |> Repo.insert()
+    |> case do
+      {:ok, request} ->
+        Phoenix.PubSub.broadcast(@pubsub, @topic, {:new_verification_request, request})
+        {:ok, request}
+
+      error ->
+        error
+    end
+  end
   @doc """
   Returns an '%Ecto.Changeset{}' for tracking user registration changes.
   """
@@ -360,4 +381,114 @@ end
       end
     end)
   end
+
+  def create_admin_lite_invite(%User{role: "admin"} = admin, email) do
+  token =
+    :crypto.strong_rand_bytes(32)
+    |> Base.url_encode64(padding: false)
+
+  expires_at =
+    DateTime.utc_now()
+    |> DateTime.add(7, :day)
+
+  %AdminLiteInvite{}
+  |> AdminLiteInvite.changeset(%{
+    email: email,
+    token: token,
+    invite_type: "admin_lite",
+    expires_at: expires_at,
+    created_by_id: admin.id
+  })
+  |> Repo.insert()
+end
+
+#creating the admin lite
+def create_admin_lite_invite(%User{}, _email) do
+  {:error, :unauthorized}
+end
+
+#getting the admin lite token
+def get_admin_lite_invite_by_token(token) do
+  Repo.get_by(AdminLiteInvite, token: token)
+end
+
+#validation function
+def get_valid_invite_by_token(token) do
+  case Repo.get_by(AdminLiteInvite, token: token) do
+    nil ->
+      {:error, :not_found}
+
+    %AdminLiteInvite{used_at: nil, expires_at: expires_at} = invite ->
+      if DateTime.compare(expires_at, DateTime.utc_now()) == :gt do
+        {:ok, invite}
+      else
+        {:error, :expired}
+      end
+
+    %AdminLiteInvite{used_at: _} ->
+      {:error, :used}
+  end
+end
+
+#for landlord request
+# def create_verification_request(attrs) do
+#   %VerificationRequest{}
+#   |> VerificationRequest.changeset(attrs)
+#   |> Repo.insert()
+# end
+
+ #for collecting admin requests from the db
+  def list_verification_requests do
+  Repo.all(VerificationRequest)
+end
+
+#for verfifying token validity
+def get_invite_by_token(token) when is_binary(token) do
+  case Repo.get_by(AdminLiteInvite, token: token) do
+    nil -> {:error, :not_found}
+    %AdminLiteInvite{used: true} = invite -> {:error, :already_used, invite}
+    %AdminLiteInvite{used: false} = invite -> {:ok, invite}
+  end
+end
+
+  def mark_invite_as_used(%AdminLiteInvite{} = invite) do
+    invite
+    |> Ecto.Changeset.change(%{used: true})
+    |> Repo.update()
+  end
+
+  #for fetching admin lite invites
+  def list_admin_lite_invites do
+    Repo.all(from i in AdminLiteInvite, order_by: [desc: i.inserted_at])
+  end
+
+  #for suspending admine lites
+  def delete_admin_lite_invite(id) do
+  case Repo.get(AdminLiteInvite, id) do
+    nil -> {:error, :not_found}
+    invite -> Repo.delete(invite)
+  end
+end
+
+def toggle_suspend_invite(id) do
+  case Repo.get(AdminLiteInvite, id) do
+    nil -> {:error, :not_found}
+    invite ->
+      # Toggles suspended state (requires a `suspended` boolean column on admin_lite_invites)
+      current_status = Map.get(invite, :suspended, false)
+
+      invite
+      |> Ecto.Changeset.change(%{suspended: !current_status})
+      |> Repo.update()
+  end
+end
+
+@doc """
+Creates an invite record for admin_lite or landlord roles.
+"""
+def create_invite(attrs \\ %{}) do
+  %AdminLiteInvite{}
+  |> AdminLiteInvite.changeset(attrs)
+  |> Repo.insert()
+end
 end

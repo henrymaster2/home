@@ -6,10 +6,12 @@ defmodule Home.Accounts.User do
   schema "users" do
     field :names, :string
     field :email, :string
+    field :id_number, :string
     field :phone, :string
     field :password, :string, virtual: true, redact: true
     field :hashed_password, :string, redact: true
     field :confirmed_at, :utc_datetime
+    field :role, :string, default: "client"
     field :authenticated_at, :utc_datetime, virtual: true
     has_many :identities, UserIdentity
     timestamps(type: :utc_datetime)
@@ -20,10 +22,12 @@ defmodule Home.Accounts.User do
   """
   def registration_changeset(user, attrs, opts \\ []) do
     user
-    |> cast(attrs, [:names, :phone])
-    |> validate_required([:names, :phone])
+    |> cast(attrs, [:names, :phone, :id_number, :role])
+    |> validate_required([:names, :phone, :id_number, :role])
     |> validate_length(:names, min: 2, max: 100)
     |> validate_length(:phone, min: 10, max: 15)
+    |> validate_length(:id_number, min: 8, max: 12)
+    |> validate_inclusion(:role, ["admin", "admin_lite", "landlord"])
     |> email_changeset(attrs, opts)
     |> password_changeset(attrs, opts)
   end

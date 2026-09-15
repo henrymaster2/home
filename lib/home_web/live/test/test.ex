@@ -7,6 +7,7 @@ defmodule HomeWeb.Text.Test do
     %{id: "buy", label: "Buy"},
     %{id: "add", label: "Add"}
   ]
+
   @impl true
   def mount(_params, _session, socket) do
     all = generate_houses()
@@ -24,9 +25,30 @@ defmodule HomeWeb.Text.Test do
        show_settings: false,
        view: "main",
        active_carousel: %{},
+       carousel_direction: %{},
        show_search: false,
-       search_query: ""
+       search_query: "",
+       current_scope: :home,
+       # :feed (small cards) or :tiktok (snap scroll)
+       view_mode: :feed,
+       # Tracks active property when expanded
+       selected_house_id: nil
      )}
+  end
+
+  @impl true
+  def handle_event("select_house", %{"id" => id}, socket) do
+    house_id = String.to_integer(id)
+
+    {:noreply,
+     socket
+     |> assign(view_mode: :tiktok, selected_house_id: house_id)
+     |> push_event("scroll_to_house", %{id: house_id})}
+  end
+
+  @impl true
+  def handle_event("show_feed", _params, socket) do
+    {:noreply, assign(socket, view_mode: :feed, selected_house_id: nil)}
   end
 
   @impl true
@@ -36,16 +58,32 @@ defmodule HomeWeb.Text.Test do
 
   @impl true
   def handle_event("set_tab", %{"tab" => "add"}, socket) do
-    {:noreply, assign(socket, show_modal: true)}
+    {:noreply, push_navigate(socket, to: "/verification")}
   end
 
   def handle_event("set_tab", %{"tab" => tab}, socket) do
     {:noreply, assign(socket, active_tab: tab, houses: filter(socket.assigns.all_houses, tab))}
   end
 
+  @impl true
   def handle_event("toggle_theme", _, socket) do
+    new_theme =
+      if socket.assigns.theme == "dark" do
+        "light"
+      else
+        "dark"
+      end
+
     {:noreply,
-     assign(socket, theme: if(socket.assigns.theme == "dark", do: "light", else: "dark"))}
+     socket
+     |> assign(:theme, new_theme)
+     |> push_event("set_global_theme", %{theme: new_theme})}
+  end
+
+  @impl true
+  def handle_event("restore_theme", %{"theme" => theme}, socket)
+      when theme in ["dark", "light"] do
+    {:noreply, assign(socket, :theme, theme)}
   end
 
   def handle_event("open_modal", _, socket) do
@@ -61,13 +99,13 @@ defmodule HomeWeb.Text.Test do
   end
 
   def handle_event("close_gallery", _params, socket) do
-  house_id = socket.assigns.gallery_house_id
+    house_id = socket.assigns.gallery_house_id
 
-  {:noreply,
-   socket
-   |> assign(:gallery_house_id, nil)
-   |> push_patch(to: ~p"/#house-#{house_id}")} # adjust path format to match your router
-end
+    {:noreply,
+     socket
+     |> assign(:gallery_house_id, nil)
+     |> push_event("scroll_to_house", %{id: house_id})}
+  end
 
   def handle_event("toggle_settings", _, socket) do
     {:noreply, assign(socket, show_settings: !socket.assigns.show_settings)}
@@ -84,7 +122,10 @@ end
     next = rem(current + 1, length(house.rooms))
 
     {:noreply,
-     assign(socket, active_carousel: Map.put(socket.assigns.active_carousel, house_id, next))}
+     assign(socket,
+       active_carousel: Map.put(socket.assigns.active_carousel, house_id, next),
+       carousel_direction: Map.put(socket.assigns.carousel_direction, house_id, :next)
+     )}
   end
 
   def handle_event("carousel_prev", %{"house" => house_id}, socket) do
@@ -95,7 +136,10 @@ end
     prev = rem(current - 1 + len, len)
 
     {:noreply,
-     assign(socket, active_carousel: Map.put(socket.assigns.active_carousel, house_id, prev))}
+     assign(socket,
+       active_carousel: Map.put(socket.assigns.active_carousel, house_id, prev),
+       carousel_direction: Map.put(socket.assigns.carousel_direction, house_id, :prev)
+     )}
   end
 
   defp filter(houses, "airbnb"), do: Enum.filter(houses, &(&1.type == "short_stay"))
@@ -283,6 +327,66 @@ end
     ]
   end
 
+  def render_small_cards(assigns) do
+    ~H"""
+    <div class="w-full max-w-5xl mx-auto px-4 pb-70 pt-6">
+      <div class="grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-4">
+        <%= for house <- @houses do %>
+          <% first_room = List.first(house.rooms) %>
+          <div
+            phx-click="select_house"
+            phx-value-id={house.id}
+            class="glass-panel rounded-2xl overflow-hidden cursor-pointer transition-all duration-300 hover:scale-[1.02] active:scale-95 flex flex-col group border"
+            style="border-color: color-mix(in srgb, var(--accent-1) 15%, transparent);"
+          >
+            <div class="relative aspect-4/3 w-full overflow-hidden bg-black/20">
+              <img
+                src={first_room.image}
+                alt={house.address}
+                class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                loading="lazy"
+              />
+              <div class="absolute inset-0 bg-linear-to-t from-black/60 via-transparent to-transparent">
+              </div>
+              <div
+                class="absolute top-2 left-2 px-2 py-0.5 rounded-full text-[9px] font-mono font-bold uppercase tracking-wider glass-panel border"
+                style="color: var(--accent-1); border-color: color-mix(in srgb, var(--accent-1) 30%, transparent);"
+              >
+                {house.type}
+              </div>
+            </div>
+
+            <div class="p-3 flex flex-col justify-between flex-1">
+              <div>
+                <h3
+                  class="text-xs md:text-sm font-bold font-mono truncate"
+                  style="color: var(--color-text)"
+                >
+                  {house.address}
+                </h3>
+                <p
+                  class="text-[10px] md:text-xs font-mono truncate"
+                  style="color: var(--color-text-dim)"
+                >
+                  {house.city}
+                </p>
+              </div>
+
+              <div
+                class="flex items-center justify-between mt-3 pt-2 border-t text-[10px] font-mono"
+                style="border-color: color-mix(in srgb, var(--color-text-dim) 15%, transparent); color: var(--color-text-dim)"
+              >
+                <span>{house.beds} BD • {house.baths} BA</span>
+                <span class="font-bold shimmer-text" style="color: var(--accent-1)">●●●●</span>
+              </div>
+            </div>
+          </div>
+        <% end %>
+      </div>
+    </div>
+    """
+  end
+
   @impl true
   def render(assigns) do
     ~H"""
@@ -290,7 +394,10 @@ end
       <div
         id="house-finder"
         phx-hook="HouseFinder"
-        class={"house-finder #{if @theme == "dark", do: "dark-theme", else: ""}"}
+        class={[
+          "house-finder",
+          if(@theme == "dark", do: "dark-theme", else: "")
+        ]}
       >
         <%= if @view == "main" do %>
           {render_main(assigns)}
@@ -310,13 +417,13 @@ end
       id="app-header"
     >
       <div class="flex items-center" id="app-brand">
-  <span
-    class="editorial-brand text-3xl md:text-4xl font-normal uppercase tracking-wide"
-    style="color: var(--color-text)"
-  >
-    HOME
-  </span>
-</div>
+        <span
+          class="editorial-brand text-3xl md:text-4xl font-normal uppercase tracking-wide"
+          style="color: var(--color-text)"
+        >
+          HOME
+        </span>
+      </div>
       <div class="relative flex w-full items-center gap-2">
         <div
           class="flex flex-1 items-center justify-center gap-1 rounded-full p-1 bottom-nav-glass shadow-xl"
@@ -399,16 +506,22 @@ end
       class="fixed bottom-4 left-1/2 z-80 flex w-[min(92vw,26rem)] -translate-x-1/2 items-center justify-around rounded-3xl px-4 py-3 shadow-2xl bottom-nav-glass"
       aria-label="Primary navigation"
     >
-     <button id="bottom-home-button" type="button" class="bottom-nav-item flex min-w-12 flex-col items-center gap-0.5" style="color: var(--color-text)" aria-label="Home">
+      <button
+        id="bottom-home-button"
+        type="button"
+        phx-click="show_feed"
+        class="bottom-nav-item flex min-w-12 flex-col items-center gap-0.5"
+        style="color: var(--color-text)"
+        aria-label="Home"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="size-5">
+          <path d="M14.916 2.404a.75.75 0 0 1-.32 1.011l-.596.31V17a1 1 0 0 1-1 1h-2.26a.75.75 0 0 1-.75-.75v-3.5a.75.75 0 0 0-.75-.75H6.75a.75.75 0 0 0-.75.75v3.5a.75.75 0 0 1-.75.75h-3.5a.75.75 0 0 1 0-1.5H2V9.957a.75.75 0 0 1-.596-1.372L2 8.275V5.75a.75.75 0 0 1 1.5 0v1.745l10.404-5.41a.75.75 0 0 1 1.012.319ZM15.861 8.57a.75.75 0 0 1 .736-.025l1.999 1.04A.75.75 0 0 1 18 10.957V16.5h.25a.75.75 0 0 1 0 1.5h-2a.75.75 0 0 1-.75-.75V9.21a.75.75 0 0 1 .361-.64Z" />
+        </svg>
 
-  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="size-5">
-  <path d="M14.916 2.404a.75.75 0 0 1-.32 1.011l-.596.31V17a1 1 0 0 1-1 1h-2.26a.75.75 0 0 1-.75-.75v-3.5a.75.75 0 0 0-.75-.75H6.75a.75.75 0 0 0-.75.75v3.5a.75.75 0 0 1-.75.75h-3.5a.75.75 0 0 1 0-1.5H2V9.957a.75.75 0 0 1-.596-1.372L2 8.275V5.75a.75.75 0 0 1 1.5 0v1.745l10.404-5.41a.75.75 0 0 1 1.012.319ZM15.861 8.57a.75.75 0 0 1 .736-.025l1.999 1.04A.75.75 0 0 1 18 10.957V16.5h.25a.75.75 0 0 1 0 1.5h-2a.75.75 0 0 1-.75-.75V9.21a.75.75 0 0 1 .361-.64Z" />
-  </svg>
-
-  <span class="text-[8px] font-bold tracking-wider">
-    HOME
-  </span>
-     </button>
+        <span class="text-[8px] font-bold tracking-wider">
+          HOME
+        </span>
+      </button>
 
       <button
         id="bottom-saved-button"
@@ -417,9 +530,20 @@ end
         style="color: var(--color-text)"
         aria-label="Saved"
       >
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-6">
-             <path stroke-linecap="round" stroke-linejoin="round" d="M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0 1 11.186 0Z" />
-         </svg>
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke-width="1.5"
+          stroke="currentColor"
+          class="size-6"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            d="M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0 1 11.186 0Z"
+          />
+        </svg>
 
         <span class="text-[8px] font-bold tracking-wider">SAVED</span>
       </button>
@@ -432,9 +556,20 @@ end
         style="color: var(--color-text-dim)"
         aria-label="Profile"
       >
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-6">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M17.982 18.725A7.488 7.488 0 0 0 12 15.75a7.488 7.488 0 0 0-5.982 2.975m11.963 0a9 9 0 1 0-11.963 0m11.963 0A8.966 8.966 0 0 1 12 21a8.966 8.966 0 0 1-5.982-2.275M15 9.75a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
-              </svg>
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke-width="1.5"
+          stroke="currentColor"
+          class="size-6"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            d="M17.982 18.725A7.488 7.488 0 0 0 12 15.75a7.488 7.488 0 0 0-5.982 2.975m11.963 0a9 9 0 1 0-11.963 0m11.963 0A8.966 8.966 0 0 1 12 21a8.966 8.966 0 0 1-5.982-2.275M15 9.75a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"
+          />
+        </svg>
 
         <span class="text-[8px] font-bold tracking-wider">PROFILE</span>
       </button>
@@ -449,8 +584,12 @@ end
         aria-label="Help"
       >
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="size-6">
-        <path fill-rule="evenodd" d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12Zm8.706-1.442c1.146-.573 2.437.463 2.126 1.706l-.709 2.836.042-.02a.75.75 0 0 1 .67 1.34l-.04.022c-1.147.573-2.438-.463-2.127-1.706l.71-2.836-.042.02a.75.75 0 1 1-.671-1.34l.041-.022ZM12 9a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Z" clip-rule="evenodd" />
-           </svg>
+          <path
+            fill-rule="evenodd"
+            d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12Zm8.706-1.442c1.146-.573 2.437.463 2.126 1.706l-.709 2.836.042-.02a.75.75 0 0 1 .67 1.34l-.04.022c-1.147.573-2.438-.463-2.127-1.706l.71-2.836-.042.02a.75.75 0 1 1-.671-1.34l.041-.022ZM12 9a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Z"
+            clip-rule="evenodd"
+          />
+        </svg>
 
         <span class="text-[8px] font-bold tracking-wider">HELP</span>
       </button>
@@ -458,16 +597,16 @@ end
 
     <!-- Settings Sheet -->
     <%= if @show_settings do %>
-     <div
-  class="fixed inset-0 z-55 flex items-end justify-center p-0"
-  style="background: rgba(0,0,0,0.3); backdrop-filter: blur(4px);"
-  phx-click="toggle_settings"
->
-  <div
-    class="settings-sheet w-full max-w-md mx-auto max-h-[85vh] overflow-y-auto overscroll-contain rounded-t-3xl p-6 pb-24"
-    phx-click=""
-    style="background: var(--glass-bg-strong); border-top: 1px solid var(--glass-border); box-shadow: 0 -10px 40px rgba(0,0,0,0.3);"
-  >
+      <div
+        class="fixed inset-0 z-55 flex items-end justify-center p-0"
+        style="background: rgba(0,0,0,0.3); backdrop-filter: blur(4px);"
+        phx-click="toggle_settings"
+      >
+        <div
+          class="settings-sheet w-full max-w-md mx-auto max-h-[85vh] overflow-y-auto overscroll-contain rounded-t-3xl p-6 pb-24"
+          phx-click=""
+          style="background: var(--glass-bg-strong); border-top: 1px solid var(--glass-border); box-shadow: 0 -10px 40px rgba(0,0,0,0.3);"
+        >
           <div
             class="w-10 h-1 rounded-full mx-auto mb-6 opacity-30"
             style="background: var(--color-text)"
@@ -543,8 +682,12 @@ end
                 Soon
               </span>
             </div>
-            <div class="flex items-center justify-between p-4 rounded-2xl"
-              style="background: color-mix(in srgb, var(--color-bg) 80%, transparent);"><span class="text-sm font-semibold" style="color: var(--color-text)">henry </span></div>
+            <div
+              class="flex items-center justify-between p-4 rounded-2xl"
+              style="background: color-mix(in srgb, var(--color-bg) 80%, transparent);"
+            >
+              <span class="text-sm font-semibold" style="color: var(--color-text)">henry </span>
+            </div>
           </div>
         </div>
       </div>
@@ -580,10 +723,14 @@ end
                 style="color: var(--color-text)"
                 aria-label="Close gallery"
               >
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="size-5">
-             <path d="M3.28 2.22a.75.75 0 0 0-1.06 1.06L5.44 6.5H2.75a.75.75 0 0 0 0 1.5h4.5A.75.75 0 0 0 8 7.25v-4.5a.75.75 0 0 0-1.5 0v2.69L3.28 2.22ZM13.5 2.75a.75.75 0 0 0-1.5 0v4.5c0 .414.336.75.75.75h4.5a.75.75 0 0 0 0-1.5h-2.69l3.22-3.22a.75.75 0 0 0-1.06-1.06L13.5 5.44V2.75ZM3.28 17.78l3.22-3.22v2.69a.75.75 0 0 0 1.5 0v-4.5a.75.75 0 0 0-.75-.75h-4.5a.75.75 0 0 0 0 1.5h2.69l-3.22 3.22a.75.75 0 1 0 1.06 1.06ZM13.5 14.56l3.22 3.22a.75.75 0 1 0 1.06-1.06l-3.22-3.22h2.69a.75.75 0 0 0 0-1.5h-4.5a.75.75 0 0 0-.75.75v4.5a.75.75 0 0 0 1.5 0v-2.69Z" />
-                      </svg>
-
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                  class="size-5"
+                >
+                  <path d="M3.28 2.22a.75.75 0 0 0-1.06 1.06L5.44 6.5H2.75a.75.75 0 0 0 0 1.5h4.5A.75.75 0 0 0 8 7.25v-4.5a.75.75 0 0 0-1.5 0v2.69L3.28 2.22ZM13.5 2.75a.75.75 0 0 0-1.5 0v4.5c0 .414.336.75.75.75h4.5a.75.75 0 0 0 0-1.5h-2.69l3.22-3.22a.75.75 0 0 0-1.06-1.06L13.5 5.44V2.75ZM3.28 17.78l3.22-3.22v2.69a.75.75 0 0 0 1.5 0v-4.5a.75.75 0 0 0-.75-.75h-4.5a.75.75 0 0 0 0 1.5h2.69l-3.22 3.22a.75.75 0 1 0 1.06 1.06ZM13.5 14.56l3.22 3.22a.75.75 0 1 0 1.06-1.06l-3.22-3.22h2.69a.75.75 0 0 0 0-1.5h-4.5a.75.75 0 0 0-.75.75v4.5a.75.75 0 0 0 1.5 0v-2.69Z" />
+                </svg>
               </button>
             </div>
 
@@ -600,16 +747,16 @@ end
                     loading="lazy"
                   />
                   <figcaption class="glass-panel absolute bottom-24 left-1/2 max-h-36 w-[min(88vw,42rem)] -translate-x-1/2 overflow-y-auto overscroll-contain rounded-2xl p-4 touch-pan-y">
-                               <p
-                            class="mb-1 text-xs font-bold uppercase tracking-widest"
-                          style="color: var(--accent-1)"
-                          >
-                         {room.name}
-                          </p>
-                        <p class="text-sm leading-relaxed" style="color: var(--color-text)">
-                       {room.note}
-                       </p>
-                         </figcaption>
+                    <p
+                      class="mb-1 text-xs font-bold uppercase tracking-widest"
+                      style="color: var(--accent-1)"
+                    >
+                      {room.name}
+                    </p>
+                    <p class="text-sm leading-relaxed" style="color: var(--color-text)">
+                      {room.note}
+                    </p>
+                  </figcaption>
                 </figure>
               <% end %>
             </div>
@@ -710,10 +857,13 @@ end
     <!-- Main Scroll for viewing house detals -->
     <div
       id="cinematic-scroll"
-      class="h-screen w-full overflow-y-auto snap-y snap-mandatory scroll-smooth relative z-10"
+      data-view-mode={@view_mode}
+      class={[
+        "h-screen w-full overflow-y-auto scroll-smooth relative z-10",
+        @view_mode == :tiktok && "snap-y snap-mandatory"
+      ]}
     >
-
-    <!-- HERO -->
+      <!-- HERO -->
       <div
         class="house-section hero-section relative w-full overflow-hidden snap-start shrink-0 flex items-center justify-center"
         data-index="0"
@@ -896,276 +1046,85 @@ end
       </div>
 
     <!-- HOUSE CARDS -->
-      <%= for {house, index} <- Enum.with_index(@houses) do %>
-        <% room_idx = Map.get(@active_carousel, house.id, 0) %>
-        <% current_room = Enum.at(house.rooms, room_idx) %>
-        <div
-          class={[
-            "house-section relative w-full overflow-hidden snap-start shrink-0",
-            if(index >= 4, do: "opacity-25 pointer-events-none", else: "")
-          ]}
-          data-index={index + 1}
-        >
+      <%= if @view_mode == :feed do %>
+        {render_small_cards(assigns)}
+      <% else %>
+        <%= for {house, index} <- Enum.with_index(@houses) do %>
+          <% room_idx = Map.get(@active_carousel, house.id, 0) %>
+          <% current_room = Enum.at(house.rooms, room_idx) %>
+          <% carousel_direction = Map.get(@carousel_direction, house.id, :next) %>
+          <% inactive_slide_offset =
+            if carousel_direction == :next, do: "translate-x-8", else: "-translate-x-8" %>
+          <div
+            class={[
+              "house-section relative w-full overflow-hidden snap-start shrink-0",
+              if(index >= 4, do: "opacity-25 pointer-events-none", else: "")
+            ]}
+            data-index={index + 1}
+            data-house-id={house.id}
+          >
 
     <!-- Blurred background from first room image -->
-          <div class="absolute inset-0 z-0 overflow-hidden">
-            <img
-              src={List.first(house.rooms).image}
-              alt=""
-              class="w-full h-full object-cover bg-blur-rich"
-              loading="lazy"
-            />
-            <div class="absolute inset-0 bg-linear-to-t from-black/80 via-black/30 to-black/50"></div>
-            <div class="absolute inset-0 color-veil"></div>
-          </div>
-
-          <%= if index < 4 do %>
-            <!-- Desktop: Split View -->
-            <div class="absolute inset-x-0 top-28 bottom-24 z-10 hidden  items-stretch justify-center gap-8 px-10 md:flex">
-              <!-- Left: Carousel Card -->
-              <div
-                class="relative h-full w-[52%] max-w-3xl rounded-3xl overflow-hidden shadow-2xl border"
-                style="border-color: color-mix(in srgb, var(--accent-1) 15%, transparent);"
-              >
-                <%= for {room, ridx} <- Enum.with_index(house.rooms) do %>
-                  <img
-                    src={room.image}
-                    alt=""
-                    class={"absolute inset-0 w-full h-full object-cover transition-opacity duration-500 #{if ridx == room_idx, do: "opacity-100", else: "opacity-0"}"}
-                  />
-                <% end %>
-                <div class="absolute inset-0 bg-linear-to-t from-black/60 to-transparent"></div>
-                <button
-                  id={"open-gallery-#{house.id}"}
-                  phx-click="open_gallery"
-                  phx-value-house={house.id}
-                  class="absolute right-4 top-4 z-10 flex h-11 w-11 items-center justify-center rounded-full border transition hover:scale-105 active:scale-95"
-                  style="background: rgba(0,0,0,0.24); border-color: rgba(255,255,255,0.25); color: white; backdrop-filter: blur(14px);"
-                  aria-label="Open image gallery"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-6">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" />
-                  </svg>
-
-                </button>
-
-    <!-- Carousel Controls -->
-                <button
-                  phx-click="carousel_prev"
-                  phx-value-house={house.id}
-                  class="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full glass-panel flex items-center justify-center hover:scale-110 transition-transform"
-                >
-                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      stroke-width="2"
-                      d="M15 19l-7-7 7-7"
-                    />
-                  </svg>
-                </button>
-                <button
-                  phx-click="carousel_next"
-                  phx-value-house={house.id}
-                  class="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full glass-panel flex items-center justify-center hover:scale-110 transition-transform"
-                >
-                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      stroke-width="2"
-                      d="M9 5l7 7-7 7"
-                    />
-                  </svg>
-                </button>
-
-    <!-- Dots -->
-                <div class="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-1.5">
-                  <%= for {_room, ridx} <- Enum.with_index(house.rooms) do %>
-                    <div
-                      class={"w-1.5 h-1.5 rounded-full transition-all #{if ridx == room_idx, do: "w-4", else: ""}"}
-                      style={"background: #{if ridx == room_idx, do: "var(--accent-1)", else: "rgba(255,255,255,0.3)"}"}
-                    >
-                    </div>
-                  <% end %>
-                </div>
-
-    <!-- Room Badge -->
-                <div
-                  class="absolute top-4 left-4 px-3 py-1 rounded-full text-[10px] font-bold font-mono uppercase tracking-wider border glass-panel"
-                  style="color: var(--accent-1); border-color: color-mix(in srgb, var(--accent-1) 30%, transparent);"
-                >
-                  {current_room.name}
-                </div>
-                <div class="absolute bottom-5 left-5 right-5 rounded-2xl border p-4 shadow-2xl note-overlay-card">
-                  <p
-                    class="mb-1 text-[10px] font-bold uppercase tracking-widest"
-                    style="color: var(--accent-1)"
-                  >
-                    {current_room.name}
-                  </p>
-                  <p class="text-sm leading-relaxed" style="color: white">
-                    {current_room.note}
-                  </p>
-                </div>
+            <div class="absolute inset-0 z-0 overflow-hidden">
+              <img
+                src={List.first(house.rooms).image}
+                alt=""
+                class="w-full h-full object-cover bg-blur-rich"
+                loading="lazy"
+              />
+              <div class="absolute inset-0 bg-linear-to-t from-black/80 via-black/30 to-black/50">
               </div>
-
-    <!-- Right: Details Panel -->
-              <div class="flex w-[34%] max-w-md flex-col justify-center glass-panel rounded-3xl p-6 pointer-events-auto">
-                <div class="mb-5">
-                  <div>
-                    <h2
-                      class="text-3xl font-bold font-mono leading-tight"
-                      style="color: var(--color-text)"
-                    >
-                      {house.address}
-                    </h2>
-                    <p class="text-sm mt-1 font-mono" style="color: var(--color-text-dim)">
-                      {house.city}
-                    </p>
-                  </div>
-                </div>
-
-                <div
-                  class="flex items-center gap-5 mb-5 text-xs font-mono"
-                  style="color: var(--color-text-dim)"
-                >
-                  <span class="flex items-center gap-1.5">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        stroke-width="2"
-                        d="M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2h-5l-5 5v5H5v-5a2 2 0 012-2h10a2 2 0 012 2v5"
-                      />
-                    </svg>
-                    {house.beds} BD
-                  </span>
-                  <span class="flex items-center gap-1.5">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        stroke-width="2"
-                        d="M12 6v6m0 0v6m0-6h6m-6 0H6"
-                      />
-                    </svg>
-                    {house.baths} BA
-                  </span>
-                  <span class="flex items-center gap-1.5">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        stroke-width="2"
-                        d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"
-                      />
-                    </svg>
-                    {house.sqft} SF
-                  </span>
-                </div>
-
-                <div class="text-center mb-4 cursor-pointer group" phx-click="open_modal">
-                  <div
-                    class="inline-flex items-center gap-2 px-4 py-2 rounded-xl border transition-colors"
-                    style="border-color: color-mix(in srgb, var(--accent-1) 20%, transparent); background: color-mix(in srgb, var(--accent-1) 4%, transparent);"
-                  >
-                    <span
-                      class="text-2xl font-bold font-mono tracking-[0.25em] shimmer-text"
-                      style="color: var(--accent-1)"
-                    >
-                      ●●●●
-                    </span>
-                    <svg
-                      class="w-4 h-4 opacity-40"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        stroke-width="2"
-                        d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
-                      />
-                    </svg>
-                  </div>
-                  <p
-                    class="text-[10px] uppercase tracking-widest mt-2 opacity-30"
-                    style="color: var(--color-text-dim)"
-                  >
-                    Tap to unlock price
-                  </p>
-                </div>
-
-                <div class="flex gap-3">
-                  <button
-                    phx-click="open_modal"
-                    class="flex-1 py-3 rounded-xl font-semibold text-sm border transition-all hover:scale-[1.02] active:scale-95 flex items-center justify-center gap-2"
-                    style="border-color: color-mix(in srgb, var(--accent-1) 40%, transparent); color: var(--accent-1);"
-                  >
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        stroke-width="2"
-                        d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
-                      />
-                    </svg>
-                    Message Owner
-                  </button>
-                  <button
-                    phx-click="open_modal"
-                    class="flex-1 py-3 rounded-xl font-semibold text-sm text-white transition-all hover:scale-[1.02] active:scale-95 flex items-center justify-center gap-2 shadow-lg"
-                    style="background: linear-gradient(135deg, var(--accent-1), var(--accent-2));"
-                  >
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        stroke-width="2"
-                        d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"
-                      />
-                    </svg>
-                    Save to Board
-                  </button>
-                </div>
-              </div>
+              <div class="absolute inset-0 color-veil"></div>
             </div>
 
-    <!-- Mobile: Stacked Card -->
-            <div class="absolute inset-x-0 top-28 bottom-24 z-10 flex items-stretch p-4 pointer-events-none md:hidden">
-              <div class="glass-panel mx-auto flex h-full w-full max-w-md flex-col overflow-hidden rounded-3xl pointer-events-auto">
-                <!-- Carousel -->
-                <div class="relative min-h-72 flex-[1_1_auto] overflow-hidden">
+            <%= if index < 4 do %>
+              <!-- Desktop: Split View -->
+              <div class="absolute inset-x-0 top-28 bottom-24 z-10 hidden  items-stretch justify-center gap-8 px-10 md:flex">
+                <!-- Left: Carousel Card -->
+                <div
+                  data-carousel-house={house.id}
+                  class="relative h-full w-[52%] max-w-3xl touch-pan-y cursor-grab overflow-hidden rounded-3xl border shadow-2xl active:cursor-grabbing"
+                  style="border-color: color-mix(in srgb, var(--accent-1) 15%, transparent);"
+                >
                   <%= for {room, ridx} <- Enum.with_index(house.rooms) do %>
                     <img
                       src={room.image}
                       alt=""
-                      class={"absolute inset-0 w-full h-full object-cover transition-opacity duration-500 #{if ridx == room_idx, do: "opacity-100", else: "opacity-0"}"}
+                      class={"absolute inset-0 w-full h-full object-cover transition-[opacity,transform] duration-500 ease-out #{if ridx == room_idx, do: "opacity-100 translate-x-0 scale-100", else: "pointer-events-none opacity-0 #{inactive_slide_offset} scale-[1.03]"}"}
                     />
                   <% end %>
                   <div class="absolute inset-0 bg-linear-to-t from-black/60 to-transparent"></div>
                   <button
-                    id={"open-gallery-mobile-#{house.id}"}
+                    id={"open-gallery-#{house.id}"}
                     phx-click="open_gallery"
                     phx-value-house={house.id}
-                    class="absolute right-3 top-3 z-10 flex h-9 w-9 items-center justify-center rounded-full border transition active:scale-95"
+                    class="absolute right-4 top-4 z-10 flex h-11 w-11 items-center justify-center rounded-full border transition hover:scale-105 active:scale-95"
                     style="background: rgba(0,0,0,0.24); border-color: rgba(255,255,255,0.25); color: white; backdrop-filter: blur(14px);"
                     aria-label="Open image gallery"
                   >
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-6">
-                         <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" />
-                   </svg>
-
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke-width="1.5"
+                      stroke="currentColor"
+                      class="size-6"
+                    >
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15"
+                      />
+                    </svg>
                   </button>
 
+    <!-- Carousel Controls -->
                   <button
                     phx-click="carousel_prev"
                     phx-value-house={house.id}
-                    class="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full glass-panel flex items-center justify-center"
+                    class="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full glass-panel flex items-center justify-center hover:scale-110 transition-transform"
                   >
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path
                         stroke-linecap="round"
                         stroke-linejoin="round"
@@ -1177,9 +1136,9 @@ end
                   <button
                     phx-click="carousel_next"
                     phx-value-house={house.id}
-                    class="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full glass-panel flex items-center justify-center"
+                    class="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full glass-panel flex items-center justify-center hover:scale-110 transition-transform"
                   >
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path
                         stroke-linecap="round"
                         stroke-linejoin="round"
@@ -1189,7 +1148,8 @@ end
                     </svg>
                   </button>
 
-                  <div class="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5">
+    <!-- Dots -->
+                  <div class="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-1.5">
                     <%= for {_room, ridx} <- Enum.with_index(house.rooms) do %>
                       <div
                         class={"w-1.5 h-1.5 rounded-full transition-all #{if ridx == room_idx, do: "w-4", else: ""}"}
@@ -1199,84 +1159,98 @@ end
                     <% end %>
                   </div>
 
+    <!-- Room Badge -->
                   <div
-                    class="absolute top-3 left-3 px-2.5 py-0.5 rounded-full text-[9px] font-bold font-mono uppercase tracking-wider border glass-panel"
+                    id={"room-badge-desktop-#{house.id}-#{room_idx}"}
+                    class="room-copy-enter absolute top-4 left-4 px-3 py-1 rounded-full text-[10px] font-bold font-mono uppercase tracking-wider border glass-panel"
                     style="color: var(--accent-1); border-color: color-mix(in srgb, var(--accent-1) 30%, transparent);"
                   >
                     {current_room.name}
                   </div>
-                  <div class="absolute bottom-8 left-3 right-3 rounded-2xl border p-3 shadow-2xl note-overlay-card">
+                  <div
+                    id={"room-note-desktop-#{house.id}-#{room_idx}"}
+                    class="room-copy-enter absolute bottom-5 left-5 right-5 rounded-2xl border p-4 shadow-2xl note-overlay-card"
+                  >
                     <p
-                      class="mb-1 text-[9px] font-bold uppercase tracking-widest"
+                      class="mb-1 text-[10px] font-bold uppercase tracking-widest"
                       style="color: var(--accent-1)"
                     >
                       {current_room.name}
                     </p>
-                    <p class="text-xs leading-relaxed" style="color: white">
+                    <p class="text-sm leading-relaxed" style="color: white">
                       {current_room.note}
                     </p>
                   </div>
                 </div>
 
-i    <!-- Info -->
-                <div class="shrink-0 p-4">
-                  <div class="mb-3">
+    <!-- Right: Details Panel -->
+                <div class="flex w-[34%] max-w-md flex-col justify-center glass-panel rounded-3xl p-6 pointer-events-auto">
+                  <div class="mb-5">
                     <div>
                       <h2
-                        class="text-lg font-bold font-mono leading-tight"
+                        class="text-3xl font-bold font-mono leading-tight"
                         style="color: var(--color-text)"
                       >
                         {house.address}
                       </h2>
-                      <p class="text-xs mt-0.5 font-mono" style="color: var(--color-text-dim)">
+                      <p class="text-sm mt-1 font-mono" style="color: var(--color-text-dim)">
                         {house.city}
                       </p>
                     </div>
                   </div>
 
                   <div
-                    class="flex items-center gap-4 mb-3 text-[10px] font-mono"
+                    class="flex items-center gap-5 mb-5 text-xs font-mono"
                     style="color: var(--color-text-dim)"
                   >
-                    <span class="flex items-center gap-1">
-                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path
+                    <span class="flex items-center gap-1.5">
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path
                           stroke-linecap="round"
                           stroke-linejoin="round"
                           stroke-width="2"
                           d="M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2h-5l-5 5v5H5v-5a2 2 0 012-2h10a2 2 0 012 2v5"
-                        /></svg>{house.beds} BD
+                        />
+                      </svg>
+                      {house.beds} BD
                     </span>
-                    <span class="flex items-center gap-1">
-                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path
+                    <span class="flex items-center gap-1.5">
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path
                           stroke-linecap="round"
                           stroke-linejoin="round"
                           stroke-width="2"
                           d="M12 6v6m0 0v6m0-6h6m-6 0H6"
-                        /></svg>{house.baths} BA
+                        />
+                      </svg>
+                      {house.baths} BA
                     </span>
-                    <span class="flex items-center gap-1">
-                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path
+                    <span class="flex items-center gap-1.5">
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path
                           stroke-linecap="round"
                           stroke-linejoin="round"
                           stroke-width="2"
                           d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"
-                        /></svg>{house.sqft} SF
+                        />
+                      </svg>
+                      {house.sqft} SF
                     </span>
                   </div>
 
-                  <div class="text-center mb-3 cursor-pointer" phx-click="open_modal">
+                  <div class="text-center mb-4 cursor-pointer group" phx-click="open_modal">
                     <div
-                      class="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border"
+                      class="inline-flex items-center gap-2 px-4 py-2 rounded-xl border transition-colors"
                       style="border-color: color-mix(in srgb, var(--accent-1) 20%, transparent); background: color-mix(in srgb, var(--accent-1) 4%, transparent);"
                     >
                       <span
-                        class="text-xl font-bold font-mono tracking-[0.25em] shimmer-text"
+                        class="text-2xl font-bold font-mono tracking-[0.25em] shimmer-text"
                         style="color: var(--accent-1)"
                       >
                         ●●●●
                       </span>
                       <svg
-                        class="w-3.5 h-3.5 opacity-40"
+                        class="w-4 h-4 opacity-40"
                         fill="none"
                         stroke="currentColor"
                         viewBox="0 0 24 24"
@@ -1290,20 +1264,20 @@ i    <!-- Info -->
                       </svg>
                     </div>
                     <p
-                      class="text-[9px] uppercase tracking-widest mt-1 opacity-30"
+                      class="text-[10px] uppercase tracking-widest mt-2 opacity-30"
                       style="color: var(--color-text-dim)"
                     >
-                      Tap to unlock
+                      Tap to unlock price
                     </p>
                   </div>
 
-                  <div class="flex gap-2">
+                  <div class="flex gap-3">
                     <button
                       phx-click="open_modal"
-                      class="flex-1 py-2.5 rounded-xl font-semibold text-xs border transition-all active:scale-95 flex items-center justify-center gap-1.5"
+                      class="flex-1 py-3 rounded-xl font-semibold text-sm border transition-all hover:scale-[1.02] active:scale-95 flex items-center justify-center gap-2"
                       style="border-color: color-mix(in srgb, var(--accent-1) 40%, transparent); color: var(--accent-1);"
                     >
-                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path
                           stroke-linecap="round"
                           stroke-linejoin="round"
@@ -1311,14 +1285,14 @@ i    <!-- Info -->
                           d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
                         />
                       </svg>
-                      Message
+                      Message Owner
                     </button>
                     <button
                       phx-click="open_modal"
-                      class="flex-1 py-2.5 rounded-xl font-semibold text-xs text-white transition-all active:scale-95 flex items-center justify-center gap-1.5 shadow-lg"
+                      class="flex-1 py-3 rounded-xl font-semibold text-sm text-white transition-all hover:scale-[1.02] active:scale-95 flex items-center justify-center gap-2 shadow-lg"
                       style="background: linear-gradient(135deg, var(--accent-1), var(--accent-2));"
                     >
-                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path
                           stroke-linecap="round"
                           stroke-linejoin="round"
@@ -1326,78 +1300,295 @@ i    <!-- Info -->
                           d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"
                         />
                       </svg>
-                      Save
+                      Save to Board
                     </button>
                   </div>
                 </div>
               </div>
-            </div>
-          <% end %>
 
-          <%= if index == 4 do %>
-            <div class="absolute inset-0 z-30 flex items-center justify-center p-6 paywall-slide">
-              <div
-                class="absolute inset-0 backdrop-blur-xl"
-                style="background: color-mix(in srgb, var(--color-bg) 60%, transparent);"
-              >
-              </div>
-              <div class="relative glass-panel rounded-3xl p-8 md:p-10 max-w-md w-full text-center border shadow-2xl float-anim">
-                <div
-                  class="w-16 h-16 rounded-full mx-auto mb-5 flex items-center justify-center border"
-                  style="border-color: color-mix(in srgb, var(--accent-1) 30%, transparent); background: color-mix(in srgb, var(--accent-1) 8%, transparent); box-shadow: 0 0 20px color-mix(in srgb, var(--accent-1) 15%, transparent);"
-                >
-                  <svg
-                    class="w-8 h-8"
-                    style="color: var(--accent-1)"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
+    <!-- Mobile: Stacked Card -->
+              <div class="absolute inset-x-0 top-28 bottom-24 z-10 flex items-stretch p-4 pointer-events-none md:hidden">
+                <div class="glass-panel mx-auto flex h-full w-full max-w-md flex-col overflow-hidden rounded-3xl pointer-events-auto">
+                  <!-- Carousel -->
+                  <div
+                    data-carousel-house={house.id}
+                    class="relative min-h-72 flex-[1_1_auto] touch-pan-y cursor-grab overflow-hidden active:cursor-grabbing"
                   >
-                    <path
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      stroke-width="1.5"
-                      d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
-                    />
-                  </svg>
+                    <%= for {room, ridx} <- Enum.with_index(house.rooms) do %>
+                      <img
+                        src={room.image}
+                        alt=""
+                        class={"absolute inset-0 w-full h-full object-cover transition-[opacity,transform] duration-500 ease-out #{if ridx == room_idx, do: "opacity-100 translate-x-0 scale-100", else: "pointer-events-none opacity-0 #{inactive_slide_offset} scale-[1.03]"}"}
+                      />
+                    <% end %>
+                    <div class="absolute inset-0 bg-linear-to-t from-black/60 to-transparent"></div>
+                    <button
+                      id={"open-gallery-mobile-#{house.id}"}
+                      phx-click="open_gallery"
+                      phx-value-house={house.id}
+                      class="absolute right-3 top-3 z-10 flex h-9 w-9 items-center justify-center rounded-full border transition active:scale-95"
+                      style="background: rgba(0,0,0,0.24); border-color: rgba(255,255,255,0.25); color: white; backdrop-filter: blur(14px);"
+                      aria-label="Open image gallery"
+                    >
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke-width="1.5"
+                        stroke="currentColor"
+                        class="size-6"
+                      >
+                        <path
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15"
+                        />
+                      </svg>
+                    </button>
+
+                    <button
+                      phx-click="carousel_prev"
+                      phx-value-house={house.id}
+                      class="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full glass-panel flex items-center justify-center"
+                    >
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          stroke-width="2"
+                          d="M15 19l-7-7 7-7"
+                        />
+                      </svg>
+                    </button>
+                    <button
+                      phx-click="carousel_next"
+                      phx-value-house={house.id}
+                      class="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full glass-panel flex items-center justify-center"
+                    >
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          stroke-width="2"
+                          d="M9 5l7 7-7 7"
+                        />
+                      </svg>
+                    </button>
+
+                    <div class="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5">
+                      <%= for {_room, ridx} <- Enum.with_index(house.rooms) do %>
+                        <div
+                          class={"w-1.5 h-1.5 rounded-full transition-all #{if ridx == room_idx, do: "w-4", else: ""}"}
+                          style={"background: #{if ridx == room_idx, do: "var(--accent-1)", else: "rgba(255,255,255,0.3)"}"}
+                        >
+                        </div>
+                      <% end %>
+                    </div>
+
+                    <div
+                      id={"room-badge-mobile-#{house.id}-#{room_idx}"}
+                      class="room-copy-enter absolute top-3 left-3 px-2.5 py-0.5 rounded-full text-[9px] font-bold font-mono uppercase tracking-wider border glass-panel"
+                      style="color: var(--accent-1); border-color: color-mix(in srgb, var(--accent-1) 30%, transparent);"
+                    >
+                      {current_room.name}
+                    </div>
+                    <div
+                      id={"room-note-mobile-#{house.id}-#{room_idx}"}
+                      class="room-copy-enter absolute bottom-8 left-3 right-3 rounded-2xl border p-3 shadow-2xl note-overlay-card"
+                    >
+                      <p
+                        class="mb-1 text-[9px] font-bold uppercase tracking-widest"
+                        style="color: var(--accent-1)"
+                      >
+                        {current_room.name}
+                      </p>
+                      <p class="text-xs leading-relaxed" style="color: white">
+                        {current_room.note}
+                      </p>
+                    </div>
+                  </div>
+
+    i    <!-- Info -->
+                  <div class="shrink-0 p-4">
+                    <div class="mb-3">
+                      <div>
+                        <h2
+                          class="text-lg font-bold font-mono leading-tight"
+                          style="color: var(--color-text)"
+                        >
+                          {house.address}
+                        </h2>
+                        <p class="text-xs mt-0.5 font-mono" style="color: var(--color-text-dim)">
+                          {house.city}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div
+                      class="flex items-center gap-4 mb-3 text-[10px] font-mono"
+                      style="color: var(--color-text-dim)"
+                    >
+                      <span class="flex items-center gap-1">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            stroke-width="2"
+                            d="M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2h-5l-5 5v5H5v-5a2 2 0 012-2h10a2 2 0 012 2v5"
+                          /></svg>{house.beds} BD
+                      </span>
+                      <span class="flex items-center gap-1">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            stroke-width="2"
+                            d="M12 6v6m0 0v6m0-6h6m-6 0H6"
+                          /></svg>{house.baths} BA
+                      </span>
+                      <span class="flex items-center gap-1">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            stroke-width="2"
+                            d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"
+                          /></svg>{house.sqft} SF
+                      </span>
+                    </div>
+
+                    <div class="text-center mb-3 cursor-pointer" phx-click="open_modal">
+                      <div
+                        class="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border"
+                        style="border-color: color-mix(in srgb, var(--accent-1) 20%, transparent); background: color-mix(in srgb, var(--accent-1) 4%, transparent);"
+                      >
+                        <span
+                          class="text-xl font-bold font-mono tracking-[0.25em] shimmer-text"
+                          style="color: var(--accent-1)"
+                        >
+                          ●●●●
+                        </span>
+                        <svg
+                          class="w-3.5 h-3.5 opacity-40"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            stroke-width="2"
+                            d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
+                          />
+                        </svg>
+                      </div>
+                      <p
+                        class="text-[9px] uppercase tracking-widest mt-1 opacity-30"
+                        style="color: var(--color-text-dim)"
+                      >
+                        Tap to unlock
+                      </p>
+                    </div>
+
+                    <div class="flex gap-2">
+                      <button
+                        phx-click="open_modal"
+                        class="flex-1 py-2.5 rounded-xl font-semibold text-xs border transition-all active:scale-95 flex items-center justify-center gap-1.5"
+                        style="border-color: color-mix(in srgb, var(--accent-1) 40%, transparent); color: var(--accent-1);"
+                      >
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            stroke-width="2"
+                            d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
+                          />
+                        </svg>
+                        Message
+                      </button>
+                      <button
+                        phx-click="open_modal"
+                        class="flex-1 py-2.5 rounded-xl font-semibold text-xs text-white transition-all active:scale-95 flex items-center justify-center gap-1.5 shadow-lg"
+                        style="background: linear-gradient(135deg, var(--accent-1), var(--accent-2));"
+                      >
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            stroke-width="2"
+                            d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"
+                          />
+                        </svg>
+                        Save
+                      </button>
+                    </div>
+                  </div>
                 </div>
-                <h3
-                  class="text-2xl md:text-3xl font-bold font-mono mb-2"
+              </div>
+            <% end %>
+
+            <%= if index == 4 do %>
+              <div class="absolute inset-0 z-30 flex items-center justify-center p-6 paywall-slide">
+                <div
+                  class="absolute inset-0 backdrop-blur-xl"
+                  style="background: color-mix(in srgb, var(--color-bg) 60%, transparent);"
+                >
+                </div>
+                <div class="relative glass-panel rounded-3xl p-8 md:p-10 max-w-md w-full text-center border shadow-2xl float-anim">
+                  <div
+                    class="w-16 h-16 rounded-full mx-auto mb-5 flex items-center justify-center border"
+                    style="border-color: color-mix(in srgb, var(--accent-1) 30%, transparent); background: color-mix(in srgb, var(--accent-1) 8%, transparent); box-shadow: 0 0 20px color-mix(in srgb, var(--accent-1) 15%, transparent);"
+                  >
+                    <svg
+                      class="w-8 h-8"
+                      style="color: var(--accent-1)"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="1.5"
+                        d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
+                      />
+                    </svg>
+                  </div>
+                  <h3
+                    class="text-2xl md:text-3xl font-bold font-mono mb-2"
+                    style="color: var(--color-text)"
+                  >
+                    12 more homes hidden
+                  </h3>
+                  <p
+                    class="text-sm md:text-base mb-8 leading-relaxed"
+                    style="color: var(--color-text-dim)"
+                  >
+                    Create a free account to unlock prices, contact owners directly, and save your favorite properties.
+                  </p>
+                  <button
+                    phx-click="open_modal"
+                    class="w-full py-4 rounded-xl font-bold text-sm md:text-base text-white transition-all hover:scale-[1.02] active:scale-95"
+                    style="background: linear-gradient(135deg, var(--accent-1), var(--accent-2)); box-shadow: 0 0 25px color-mix(in srgb, var(--accent-1) 20%, transparent);"
+                  >
+                    Unlock Full Access — 10 sec signup
+                  </button>
+                  <p class="text-xs mt-4 opacity-30" style="color: var(--color-text-dim)">
+                    No credit card required
+                  </p>
+                </div>
+              </div>
+            <% end %>
+
+            <%= if index > 4 do %>
+              <div class="absolute inset-0 z-20 flex items-center justify-center">
+                <span
+                  class="text-sm font-mono font-bold tracking-[0.3em] opacity-20 border border-current px-4 py-2 rounded-lg"
                   style="color: var(--color-text)"
                 >
-                  12 more homes hidden
-                </h3>
-                <p
-                  class="text-sm md:text-base mb-8 leading-relaxed"
-                  style="color: var(--color-text-dim)"
-                >
-                  Create a free account to unlock prices, contact owners directly, and save your favorite properties.
-                </p>
-                <button
-                  phx-click="open_modal"
-                  class="w-full py-4 rounded-xl font-bold text-sm md:text-base text-white transition-all hover:scale-[1.02] active:scale-95"
-                  style="background: linear-gradient(135deg, var(--accent-1), var(--accent-2)); box-shadow: 0 0 25px color-mix(in srgb, var(--accent-1) 20%, transparent);"
-                >
-                  Unlock Full Access — 10 sec signup
-                </button>
-                <p class="text-xs mt-4 opacity-30" style="color: var(--color-text-dim)">
-                  No credit card required
-                </p>
+                  ENCRYPTED
+                </span>
               </div>
-            </div>
-          <% end %>
-
-          <%= if index > 4 do %>
-            <div class="absolute inset-0 z-20 flex items-center justify-center">
-              <span
-                class="text-sm font-mono font-bold tracking-[0.3em] opacity-20 border border-current px-4 py-2 rounded-lg"
-                style="color: var(--color-text)"
-              >
-                ENCRYPTED
-              </span>
-            </div>
-          <% end %>
-        </div>
+            <% end %>
+          </div>
+        <% end %>
       <% end %>
     </div>
 
@@ -1611,6 +1802,13 @@ i    <!-- Info -->
       }
       .paywall-slide {
         animation: slideUp 0.7s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      }
+      @keyframes room-copy-enter {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+      .room-copy-enter {
+        animation: room-copy-enter 350ms ease-out both;
       }
     </style>
     """

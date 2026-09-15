@@ -2,6 +2,8 @@ defmodule HomeWeb.GoogleAuthController do
   use HomeWeb, :controller
 
   alias Assent.Strategy.Google
+ alias Homeweb.UserAuth
+  alias Home.Accounts
 
   def request(conn, _params) do
     config = [
