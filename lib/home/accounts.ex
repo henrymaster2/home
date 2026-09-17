@@ -9,16 +9,17 @@ defmodule Home.Accounts do
   alias Home.Accounts.{User, UserToken, UserNotifier, UserIdentity}
   alias Home.Accounts.VerificationRequest
 
- @pubsub Home.PubSub
+  @pubsub Home.PubSub
   @topic "verification_requests"
 
   def subscribe_verification_requests do
     Phoenix.PubSub.subscribe(@pubsub, @topic)
   end
 
- def create_verification_request(attrs) do
+  def create_verification_request(attrs) do
     %VerificationRequest{}
-    |> VerificationRequest.changeset(attrs) # Explicitly module-scoped
+    # Explicitly module-scoped
+    |> VerificationRequest.changeset(attrs)
     |> Repo.insert()
     |> case do
       {:ok, request} ->
@@ -29,6 +30,7 @@ defmodule Home.Accounts do
         error
     end
   end
+
   @doc """
   Returns an '%Ecto.Changeset{}' for tracking user registration changes.
   """
@@ -67,69 +69,68 @@ defmodule Home.Accounts do
     Repo.get_by(User, email: email)
   end
 
-  #for finding user and creating if no one this is for sign in by google
+  # for finding user and creating if no one this is for sign in by google
   def find_or_create_google_user(google_user) do
-  google_id = google_user["sub"]
-  email = google_user["email"]
+    google_id = google_user["sub"]
+    email = google_user["email"]
 
+    case Repo.get_by(UserIdentity, provider: "google", provider_user_id: google_id) do
+      %UserIdentity{user_id: user_id} ->
+        {:ok, get_user!(user_id)}
 
-  case Repo.get_by(UserIdentity, provider: "google", provider_user_id: google_id) do
-   %UserIdentity{user_id: user_id} ->
-  {:ok, get_user!(user_id)}
+      nil ->
+        case get_user_by_email(email) do
+          %User{} = user ->
+            create_google_identity(user, google_id)
 
-    nil ->
-      case get_user_by_email(email) do
-        %User{} = user ->
-          create_google_identity(user, google_id)
-
-        nil ->
-          create_google_user(google_user, google_id)
-      end
-  end
-end
-
-## for creating google identity
-
- defp create_google_identity(user, google_id) do
-  %UserIdentity{}
-  |> UserIdentity.changeset(%{
-    provider: "google",
-    provider_user_id: google_id,
-    user_id: user.id
-  })
-  |> Repo.insert()
-  |> case do
-    {:ok, _identity} -> user
-    {:error, changeset} -> {:error, changeset}
-  end
-end
-
-## for creating the user
-defp create_google_user(google_user, google_id) do
-  Repo.transact(fn ->
-    with {:ok, user} <-
-           %User{}
-           |> User.registration_changeset(%{
-             names: google_user["name"],
-             email: google_user["email"],
-             confirmed_at: DateTime.utc_now()
-           })
-           |> Repo.insert(),
-         {:ok, _identity} <-
-           %UserIdentity{}
-           |> UserIdentity.changeset(%{
-             provider: "google",
-             provider_user_id: google_id,
-             user_id: user.id
-           })
-           |> Repo.insert() do
-      {:ok, user}
-    else
-      {:error, changeset} ->
-        {:error, changeset}
+          nil ->
+            create_google_user(google_user, google_id)
+        end
     end
-  end)
-end
+  end
+
+  ## for creating google identity
+
+  defp create_google_identity(user, google_id) do
+    %UserIdentity{}
+    |> UserIdentity.changeset(%{
+      provider: "google",
+      provider_user_id: google_id,
+      user_id: user.id
+    })
+    |> Repo.insert()
+    |> case do
+      {:ok, _identity} -> user
+      {:error, changeset} -> {:error, changeset}
+    end
+  end
+
+  ## for creating the user
+  defp create_google_user(google_user, google_id) do
+    Repo.transact(fn ->
+      with {:ok, user} <-
+             %User{}
+             |> User.registration_changeset(%{
+               names: google_user["name"],
+               email: google_user["email"],
+               confirmed_at: DateTime.utc_now()
+             })
+             |> Repo.insert(),
+           {:ok, _identity} <-
+             %UserIdentity{}
+             |> UserIdentity.changeset(%{
+               provider: "google",
+               provider_user_id: google_id,
+               user_id: user.id
+             })
+             |> Repo.insert() do
+        {:ok, user}
+      else
+        {:error, changeset} ->
+          {:error, changeset}
+      end
+    end)
+  end
 
   @doc """
   Gets a user by email and password.
@@ -382,74 +383,98 @@ end
     end)
   end
 
-  def create_admin_lite_invite(%User{role: "admin"} = admin, email) do
-  token =
-    :crypto.strong_rand_bytes(32)
-    |> Base.url_encode64(padding: false)
+  def admin_lite?(%User{role: "admin_lite"}), do: true
 
-  expires_at =
-    DateTime.utc_now()
-    |> DateTime.add(7, :day)
-
-  %AdminLiteInvite{}
-  |> AdminLiteInvite.changeset(%{
-    email: email,
-    token: token,
-    invite_type: "admin_lite",
-    expires_at: expires_at,
-    created_by_id: admin.id
-  })
-  |> Repo.insert()
-end
-
-#creating the admin lite
-def create_admin_lite_invite(%User{}, _email) do
-  {:error, :unauthorized}
-end
-
-#getting the admin lite token
-def get_admin_lite_invite_by_token(token) do
-  Repo.get_by(AdminLiteInvite, token: token)
-end
-
-#validation function
-def get_valid_invite_by_token(token) do
-  case Repo.get_by(AdminLiteInvite, token: token) do
-    nil ->
-      {:error, :not_found}
-
-    %AdminLiteInvite{used_at: nil, expires_at: expires_at} = invite ->
-      if DateTime.compare(expires_at, DateTime.utc_now()) == :gt do
-        {:ok, invite}
-      else
-        {:error, :expired}
-      end
-
-    %AdminLiteInvite{used_at: _} ->
-      {:error, :used}
+  def admin_lite?(%User{email: email}) when is_binary(email) do
+    Repo.exists?(
+      from i in AdminLiteInvite,
+        where: i.email == ^email and i.invite_type == "admin_lite"
+    )
   end
-end
 
-#for landlord request
-# def create_verification_request(attrs) do
-#   %VerificationRequest{}
-#   |> VerificationRequest.changeset(attrs)
-#   |> Repo.insert()
-# end
+  def admin_lite?(_user), do: false
 
- #for collecting admin requests from the db
+  def super_admin?(%User{role: "admin"} = user), do: not admin_lite?(user)
+  def super_admin?(_user), do: false
+
+  def create_admin_lite_invite(%User{} = admin, email) do
+    if super_admin?(admin) do
+      token =
+        :crypto.strong_rand_bytes(32)
+        |> Base.url_encode64(padding: false)
+
+      expires_at =
+        DateTime.utc_now()
+        |> DateTime.add(7, :day)
+
+      %AdminLiteInvite{}
+      |> AdminLiteInvite.changeset(%{
+        email: email,
+        token: token,
+        invite_type: "admin_lite",
+        expires_at: expires_at,
+        created_by_id: admin.id
+      })
+      |> Repo.insert()
+    else
+      {:error, :unauthorized}
+    end
+  end
+
+  # getting the admin lite token
+  def get_admin_lite_invite_by_token(token) do
+    Repo.get_by(AdminLiteInvite, token: token)
+  end
+
+  # validation function
+  def get_valid_invite_by_token(token) do
+    case Repo.get_by(AdminLiteInvite, token: token) do
+      nil ->
+        {:error, :not_found}
+
+      %AdminLiteInvite{used_at: nil, expires_at: expires_at} = invite ->
+        if DateTime.compare(expires_at, DateTime.utc_now()) == :gt do
+          {:ok, invite}
+        else
+          {:error, :expired}
+        end
+
+      %AdminLiteInvite{used_at: _} ->
+        {:error, :used}
+    end
+  end
+
+  # for landlord request
+  # def create_verification_request(attrs) do
+  #   %VerificationRequest{}
+  #   |> VerificationRequest.changeset(attrs)
+  #   |> Repo.insert()
+  # end
+
+  # for collecting admin requests from the db
   def list_verification_requests do
-  Repo.all(VerificationRequest)
-end
-
-#for verfifying token validity
-def get_invite_by_token(token) when is_binary(token) do
-  case Repo.get_by(AdminLiteInvite, token: token) do
-    nil -> {:error, :not_found}
-    %AdminLiteInvite{used: true} = invite -> {:error, :already_used, invite}
-    %AdminLiteInvite{used: false} = invite -> {:ok, invite}
+    Repo.all(VerificationRequest)
   end
-end
+
+  def get_verification_request_by_email(email) when is_binary(email) do
+    normalized_email = String.trim(email)
+
+    Repo.one(
+      from r in VerificationRequest,
+        where: r.email == ^normalized_email,
+        order_by: [desc: r.inserted_at],
+        limit: 1
+    )
+  end
+
+  # for verfifying token validity
+  def get_invite_by_token(token) when is_binary(token) do
+    case Repo.get_by(AdminLiteInvite, token: token) do
+      nil -> {:error, :not_found}
+      %AdminLiteInvite{used: true} = invite -> {:error, :already_used, invite}
+      %AdminLiteInvite{used: false} = invite -> {:ok, invite}
+    end
+  end
 
   def mark_invite_as_used(%AdminLiteInvite{} = invite) do
     invite
@@ -457,38 +482,40 @@ end
     |> Repo.update()
   end
 
-  #for fetching admin lite invites
+  # for fetching admin lite invites
   def list_admin_lite_invites do
     Repo.all(from i in AdminLiteInvite, order_by: [desc: i.inserted_at])
   end
 
-  #for suspending admine lites
+  # for suspending admine lites
   def delete_admin_lite_invite(id) do
-  case Repo.get(AdminLiteInvite, id) do
-    nil -> {:error, :not_found}
-    invite -> Repo.delete(invite)
+    case Repo.get(AdminLiteInvite, id) do
+      nil -> {:error, :not_found}
+      invite -> Repo.delete(invite)
+    end
   end
-end
 
-def toggle_suspend_invite(id) do
-  case Repo.get(AdminLiteInvite, id) do
-    nil -> {:error, :not_found}
-    invite ->
-      # Toggles suspended state (requires a `suspended` boolean column on admin_lite_invites)
-      current_status = Map.get(invite, :suspended, false)
+  def toggle_suspend_invite(id) do
+    case Repo.get(AdminLiteInvite, id) do
+      nil ->
+        {:error, :not_found}
 
-      invite
-      |> Ecto.Changeset.change(%{suspended: !current_status})
-      |> Repo.update()
+      invite ->
+        # Toggles suspended state (requires a `suspended` boolean column on admin_lite_invites)
+        current_status = Map.get(invite, :suspended, false)
+
+        invite
+        |> Ecto.Changeset.change(%{suspended: !current_status})
+        |> Repo.update()
+    end
   end
-end
 
-@doc """
-Creates an invite record for admin_lite or landlord roles.
-"""
-def create_invite(attrs \\ %{}) do
-  %AdminLiteInvite{}
-  |> AdminLiteInvite.changeset(attrs)
-  |> Repo.insert()
-end
+  @doc """
+  Creates an invite record for admin_lite or landlord roles.
+  """
+  def create_invite(attrs \\ %{}) do
+    %AdminLiteInvite{}
+    |> AdminLiteInvite.changeset(attrs)
+    |> Repo.insert()
+  end
 end

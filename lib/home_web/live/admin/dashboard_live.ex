@@ -1,36 +1,41 @@
 defmodule HomeWeb.Admin.DashboardLive do
   use HomeWeb, :live_view
-   alias Home.Accounts
-  @impl true
-  def mount(_params, session, socket) do
+  alias Home.Accounts
 
-    current_admin =
-    case Accounts.get_user_by_session_token(session["user_token"]) do
-      {user, _inserted_at} -> user
-      nil -> nil
+  @impl true
+  def mount(_params, _session, socket) do
+    current_admin = socket.assigns.current_scope.user
+
+    if Accounts.super_admin?(current_admin) do
+      {:ok,
+       socket
+       |> assign(:page_title, "admindash")
+       |> assign(:current_admin, current_admin)
+       |> assign(:sidebar_open, false)
+       |> assign(:pending_expanded, false)
+       |> assign(:theme, "dark")
+       |> assign(:balance, "KES 142,500.00")
+       |> assign(:system_balance, "KES 142.5k")
+       |> assign(:total_revenue, "KES 88.4k")
+       |> assign(:pending_reviews, 112)
+       |> assign(:total_reviews, 145)
+       |> assign(:new_threads, 14)
+       |> assign(:flagged_threads, 2)}
+    else
+      {:ok,
+       socket
+       |> put_flash(:error, "You are not authorized to access this page.")
+       |> redirect(to: unauthorized_admin_path(current_admin))}
     end
-    if current_admin && current_admin.role == "admin" do
-    {:ok,
-     socket
-     |> assign(:page_title, "admindash")
-     |> assign(:current_admin, current_admin)
-     |> assign(:sidebar_open, false)
-     |> assign(:pending_expanded, false)
-     |> assign(:theme, "dark")
-     |> assign(:balance, "KES 142,500.00")
-     |> assign(:system_balance, "KES 142.5k")
-     |> assign(:total_revenue, "KES 88.4k")
-     |> assign(:pending_reviews, 112)
-     |> assign(:total_reviews, 145)
-     |> assign(:new_threads, 14)
-     |> assign(:flagged_threads, 2)}
-     else
-    {:ok,
-     socket
-     |> put_flash(:error, "You are not authorized to access this page.")
-     |> redirect(to: ~p"/users/log-in")}
-     end
-end
+  end
+
+  defp unauthorized_admin_path(user) do
+    cond do
+      Accounts.admin_lite?(user) -> ~p"/home"
+      user && user.role == "landlord" -> ~p"/house"
+      true -> ~p"/users/log-in"
+    end
+  end
   @impl true
   def handle_event("toggle_sidebar", _, socket) do
     {:noreply, update(socket, :sidebar_open, &(!&1))}

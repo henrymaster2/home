@@ -1,5 +1,6 @@
 defmodule HomeWeb.Admin.PropertyLive do
   use HomeWeb, :live_view
+  alias Home.Accounts
   alias Home.Repo
   alias Home.Properties.Property
   import Ecto.Query
@@ -9,6 +10,14 @@ defmodule HomeWeb.Admin.PropertyLive do
 
   @impl true
   def mount(_params, _session, socket) do
+    current_user = socket.assigns.current_scope.user
+
+    unless Accounts.super_admin?(current_user) do
+      {:ok,
+       socket
+       |> put_flash(:error, "You are not authorized to access this page.")
+       |> redirect(to: unauthorized_admin_path(current_user))}
+    else
     if connected?(socket), do: Process.send_after(self(), :tick, @tick_interval)
 
     socket =
@@ -18,6 +27,15 @@ defmodule HomeWeb.Admin.PropertyLive do
       |> fetch_properties()
 
     {:ok, socket}
+    end
+  end
+
+  defp unauthorized_admin_path(user) do
+    cond do
+      Accounts.admin_lite?(user) -> ~p"/home"
+      user && user.role == "landlord" -> ~p"/house"
+      true -> ~p"/users/log-in"
+    end
   end
 
   defp fetch_properties(socket) do

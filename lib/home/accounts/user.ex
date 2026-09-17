@@ -23,7 +23,7 @@ defmodule Home.Accounts.User do
   def registration_changeset(user, attrs, opts \\ []) do
     user
     |> cast(attrs, [:names, :phone, :id_number, :role])
-    |> validate_required([:names, :phone, :id_number, :role])
+    |> validate_required([:names, :id_number, :phone,  :role])
     |> validate_length(:names, min: 2, max: 100)
     |> validate_length(:phone, min: 10, max: 15)
     |> validate_length(:id_number, min: 8, max: 12)

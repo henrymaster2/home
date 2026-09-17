@@ -5,7 +5,7 @@ defmodule HomeWeb.Text.Lite do
 def mount(_params, _session, socket) do
   current_user = socket.assigns.current_scope.user
 
-  if current_user.role == "admin" do
+  if Accounts.super_admin?(current_user) do
     {:ok,
      socket
      |> assign(:theme, "dark")
@@ -25,7 +25,15 @@ def mount(_params, _session, socket) do
     {:ok,
      socket
      |> put_flash(:error, "You are not authorized to access Admin Lite.")
-     |> redirect(to: ~p"/admin")}
+     |> redirect(to: unauthorized_admin_path(current_user))}
+  end
+end
+
+defp unauthorized_admin_path(user) do
+  cond do
+    Accounts.admin_lite?(user) -> ~p"/home"
+    user && user.role == "landlord" -> ~p"/house"
+    true -> ~p"/users/log-in"
   end
 end
 
@@ -382,13 +390,13 @@ end
                 class="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1 text-[11px] font-mono text-indigo-300 outline-none truncate"
               />
               <button
-  type="button"
-  phx-click="copy_link"
-  phx-value-url={"#{HomeWeb.Endpoint.url()}/verification?token=#{invite.token}"}
-  class="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-[10px] font-semibold shrink-0 transition"
->
-  Copy
-</button>
+            type="button"
+              phx-click="copy_link"
+              phx-value-url={"#{HomeWeb.Endpoint.url()}/verification?token=#{invite.token}"}
+             class="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-[10px] font-semibold shrink-0 transition"
+                         >
+                 Copy
+              </button>
             </div>
           </div>
 
