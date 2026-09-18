@@ -404,7 +404,7 @@ defmodule HomeWeb.Lite.DashboardLive do
               </div>
             </div>
           </div>
-          
+
     <!-- LANDLORD REQUESTS TABLE -->
           <div
             class="rounded-xl overflow-hidden border border-[var(--border)]"
@@ -456,7 +456,7 @@ defmodule HomeWeb.Lite.DashboardLive do
                       <td class="p-4 text-right">
                         <!-- DROPDOWN MENU -->
                         <details class="relative inline-block text-left">
-                          <summary class="cursor-pointer list-none px-3 py-1.5 rounded-md bg-slate-900/60 border border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text-main)] hover:border-violet-500/40 transition text-[11px] font-medium inline-flex items-center gap-1.5">
+                          <summary class="cursor-pointer list-none px-3 py-1.5 rounded-md bg-slate-800/100 border border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text-main)] hover:border-violet-500/40 transition text-[11px] font-medium inline-flex items-center gap-1.5">
                             <span>Copy Details</span>
                             <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path

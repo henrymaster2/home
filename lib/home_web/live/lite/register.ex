@@ -2,87 +2,105 @@ defmodule HomeWeb.Lite.Register do
   use HomeWeb, :live_view
   alias Home.Accounts
   alias Home.Accounts.AdminLiteInvite
+@impl true
+def mount(params, _session, socket) do
+  token = params["token"]
 
-  @impl true
-  def mount(params, _session, socket) do
-    token = params["token"]
+  socket =
+    socket
+    |> assign(:theme, "dark")
+    |> assign(:step, 1)
+    |> assign(:mobile_steps_open, false)
+    |> assign(:request_submitted, false)
+    |> assign(:submitted_details, nil)
+    |> assign(:request_error, nil)
+    |> assign(:registration_error, nil)
+    |> assign(:role, nil)
+    |> assign(:invite_name, nil)
+    |> assign(:invite_phone, nil)
+    |> allow_upload(:ownership_doc, accept: ~w(.jpg .jpeg .png .pdf), max_entries: 1, max_file_size: 10_000_000)
+    |> allow_upload(:id_front, accept: ~w(.jpg .jpeg .png .pdf), max_entries: 1, max_file_size: 10_000_000)
+    |> allow_upload(:id_back, accept: ~w(.jpg .jpeg .png .pdf), max_entries: 1, max_file_size: 10_000_000)
+    |> assign(:form_data, %{
+      "entity_type" => "individual",
+      "names" => "",
+      "email" => "",
+      "phone" => "",
+      "whatsapp_phone" => "",
+      "residence_location" => "",
+      "id_type" => "National ID",
+      "id_number" => "",
+      "property" => "",
+      "ownership_type" => "Freehold title",
+      "lr_number" => "",
+      "payout_method" => "M-Pesa",
+      "payout_number" => "",
+      "payout_name" => "",
+      "comply" => false,
+      "listing_purpose" => "renting",
+      "property_name" => "",
+      "ownership_type" => "Freehold title",
+      "lr_number" => "",
+      "property_location" => "",
+      "total_units" => ""
+    })
 
-    socket =
-      socket
-      |> assign(:theme, "dark")
-      |> assign(:step, 1)
-      |> assign(:mobile_steps_open, false)
-      |> assign(:request_submitted, false)
-      |> assign(:submitted_details, nil)
-      |> assign(:request_error, nil)
-      |> assign(:registration_error, nil)
-      |> assign(:role, nil)
-      |> assign(:invite_name, nil)
-      |> assign(:invite_phone, nil)
-      |> assign(:form_data, %{
-        "names" => "",
-        "email" => "",
-        "phone" => "",
-        "language" => "English",
-        "id_type" => "National ID",
-        "id_number" => "",
-        "property" => "",
-        "ownership_type" => "Freehold title",
-        "lr_number" => "",
-        "payout_method" => "M-Pesa",
-        "payout_number" => "",
-        "payout_name" => "",
-        "comply" => false
-      })
+  socket =
+    if token do
+      case Accounts.get_invite_by_token(token) do
+        {:ok, invite} ->
+          case registration_role(invite) do
+            nil ->
+              socket
+              |> assign(:invite, nil)
+              |> assign(:invite_status, :invalid)
 
-    socket =
-      if token do
-        case Accounts.get_invite_by_token(token) do
-          {:ok, invite} ->
-            case registration_role(invite) do
-              nil ->
-                socket
-                |> assign(:invite, nil)
-                |> assign(:invite_status, :invalid)
+            role ->
+              verification_request = Accounts.get_verification_request_by_email(invite.email)
+              invite_name = if verification_request, do: verification_request.names, else: ""
+              invite_phone = if verification_request, do: verification_request.phone, else: ""
 
-              role ->
-                verification_request = Accounts.get_verification_request_by_email(invite.email)
-                invite_name = if verification_request, do: verification_request.names, else: ""
-                invite_phone = if verification_request, do: verification_request.phone, else: ""
+              updated_data =
+                socket.assigns.form_data
+                |> Map.put("names", invite_name)
+                |> Map.put("email", invite.email)
+                |> Map.put("phone", invite_phone)
+                |> Map.put("whatsapp_phone", invite_phone)
+                |> Map.put("payout_name", invite_name)
 
-                updated_data =
-                  socket.assigns.form_data
-                  |> Map.put("names", invite_name)
-                  |> Map.put("email", invite.email)
-                  |> Map.put("phone", invite_phone)
-                  |> Map.put("payout_name", invite_name)
+              socket
+              |> assign(:invite, invite)
+              |> assign(:role, role)
+              |> assign(:invite_status, :valid)
+              |> assign(:form_data, updated_data)
+          end
 
-                socket
-                |> assign(:invite, invite)
-                |> assign(:role, role)
-                |> assign(:invite_status, :valid)
-                |> assign(:form_data, updated_data)
-            end
+        {:error, :already_used, _invite} ->
+          socket
+          |> assign(:invite, nil)
+          |> assign(:invite_status, :already_used)
 
-          {:error, :already_used, _invite} ->
-            socket
-            |> assign(:invite, nil)
-            |> assign(:invite_status, :already_used)
-
-          {:error, :not_found} ->
-            socket
-            |> assign(:invite, nil)
-            |> assign(:invite_status, :invalid)
-        end
-      else
-        socket
-        |> assign(:invite, nil)
-        |> assign(:invite_status, :none)
+        {:error, :not_found} ->
+          socket
+          |> assign(:invite, nil)
+          |> assign(:invite_status, :invalid)
       end
+    else
+      socket
+      |> assign(:invite, nil)
+      |> assign(:invite_status, :none)
+    end
 
-    {:ok, socket}
-  end
+  {:ok, socket}
+end
 
+@impl true
+def handle_event("cancel_upload", %{"ref" => ref, "upload" => upload}, socket) do
+  upload_atom = String.to_existing_atom(upload)
+  {:noreply, cancel_upload(socket, upload_atom, ref)}
+end
+
+@impl true
   defp registration_role(%AdminLiteInvite{invite_type: "admin_lite"}), do: "admin_lite"
   defp registration_role(%AdminLiteInvite{invite_type: "landlord"}), do: "landlord"
   defp registration_role(_invite), do: nil
@@ -254,10 +272,7 @@ defmodule HomeWeb.Lite.Register do
   @impl true
   def render(assigns) do
     ~H"""
-    <div
-    id="both-register"
-    phx-hook="HouseFinder"
-    data-theme={@theme} class="min-h-screen">
+    <div id="both-register" phx-hook="HouseFinder" data-theme={@theme} class="min-h-screen">
       <link rel="preconnect" href="https://fonts.googleapis.com" />
       <link
         href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,500;0,600;0,700;1,500&family=Inter:wght@400;500;600;700&display=swap"
@@ -623,15 +638,16 @@ defmodule HomeWeb.Lite.Register do
 
                   <%= if @mobile_steps_open do %>
                     <div
-                      class="fixed inset-0 z-50 sm:hidden bg-black/50"
+                      class="fixed inset-0 z-50 sm:hidden bg-black/20 backdrop-blur-[1px] px-3 pt-32"
                       phx-window-keydown="close_steps"
                       phx-key="escape"
                     >
                       <div
-                        class="panel-alt absolute inset-y-0 left-0 w-[min(18rem,86vw)] border-r border-token px-5 py-5 shadow-2xl"
+                        class="mx-auto w-full max-w-[26rem] max-h-[70vh] overflow-y-auto rounded-2xl border border-token px-4 py-4 shadow-2xl"
+                        style="background: color-mix(in srgb, var(--panel) 84%, transparent); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);"
                         phx-click-away="close_steps"
                       >
-                        <div class="flex items-center justify-between gap-4 mb-5">
+                        <div class="flex items-center justify-between gap-4 mb-4">
                           <div>
                             <p class="text-xs font-semibold text-gold tracking-wide uppercase">
                               Landlord onboarding
@@ -658,10 +674,10 @@ defmodule HomeWeb.Lite.Register do
                           </button>
                         </div>
 
-                        <ol class="flex flex-col gap-3">
+                        <ol class="flex flex-col gap-2.5">
                           <%= for {step, label} <- step_items() do %>
                             <li
-                              class="rail-item cursor-pointer"
+                              class="rail-item cursor-pointer rounded-xl px-2.5 py-2 transition"
                               phx-click="go_to_step"
                               phx-value-step={step}
                               data-state={
@@ -672,7 +688,7 @@ defmodule HomeWeb.Lite.Register do
                                 end
                               }
                             >
-                              <button type="button" class="w-full flex items-start gap-3 text-left">
+                              <button type="button" class="w-full flex items-center gap-3 text-left">
                                 <span class="rail-dot">
                                   <%= if @step > step do %>
                                     <svg
@@ -857,240 +873,402 @@ defmodule HomeWeb.Lite.Register do
                     <main class="flex-1 min-w-0 px-4 sm:px-8 py-5 sm:py-6 min-h-[380px]">
                       <form id="landlord-kyc-form" phx-change="update_field" phx-submit="register">
                         <!-- STEP 1 -->
-                        <section class={if @step == 1, do: "block", else: "hidden"}>
-                          <h2 class="font-serif-display text-lg ink mb-1">Personal details</h2>
-                          <p class="ink-dim text-sm mb-5">
-                            Use the invite email below and add the details required for verification.
-                          </p>
-                          <div class="grid sm:grid-cols-2 gap-4">
-                            <div class="sm:col-span-2">
-                              <label class="block text-xs font-semibold ink-dim mb-1.5">
-                                Full name
-                              </label>
-                              <input
-                                type="text"
-                                name="names"
-                                value={@form_data["names"]}
-                                required
-                                class="field-input w-full rounded-lg px-4 py-2.5 text-sm"
-                              />
-                            </div>
-                            <div class="sm:col-span-2">
-                              <label class="block text-xs font-semibold ink-dim mb-1.5">
-                                Email address
-                              </label>
-                              <input
-                                type="email"
-                                name="email"
-                                value={@form_data["email"]}
-                                readonly
-                                class="field-input w-full rounded-lg px-4 py-2.5 text-sm"
-                              />
-                            </div>
-                            <div>
-                              <label class="block text-xs font-semibold ink-dim mb-1.5">
-                                Phone number
-                              </label>
-                              <input
-                                type="tel"
-                                name="phone"
-                                value={@form_data["phone"]}
-                                placeholder="07XX XXX XXX"
-                                required
-                                class="field-input w-full rounded-lg px-4 py-2.5 text-sm"
-                              />
-                            </div>
-                            <div>
-                              <label class="block text-xs font-semibold ink-dim mb-1.5">
-                                Preferred language
-                              </label>
-                              <select
-                                name="language"
-                                class="field-input w-full rounded-lg px-4 py-2.5 text-sm"
-                              >
-                                <option selected={@form_data["language"] == "English"}>
-                                  English
-                                </option>
-                                <option selected={@form_data["language"] == "Kiswahili"}>
-                                  Kiswahili
-                                </option>
-                              </select>
-                            </div>
-                          </div>
-                        </section>
+                        <!-- STEP 1 -->
+<section class={if @step == 1, do: "block", else: "hidden"}>
+  <h2 class="font-serif-display text-lg ink mb-1">Personal details</h2>
+  <p class="ink-dim text-sm mb-5">
+    Provide your primary personal information for verification.
+  </p>
+  <div class="grid sm:grid-cols-2 gap-4">
+    <!-- Entity Type -->
+    <div class="sm:col-span-2">
+      <label class="block text-xs font-semibold ink-dim mb-1.5">
+        Landlord category
+      </label>
+      <div class="grid grid-cols-2 gap-3">
+        <label class="flex items-center gap-2 border border-token rounded-lg p-3 cursor-pointer panel-alt">
+          <input
+            type="radio"
+            name="entity_type"
+            value="individual"
+            checked={@form_data["entity_type"] == "individual"}
+            class="text-accent"
+          />
+          <span class="text-xs font-medium ink">Individual Landlord</span>
+        </label>
+        <label class="flex items-center gap-2 border border-token rounded-lg p-3 cursor-pointer panel-alt">
+          <input
+            type="radio"
+            name="entity_type"
+            value="company"
+            checked={@form_data["entity_type"] == "company"}
+            class="text-accent"
+          />
+          <span class="text-xs font-medium ink">Company / Business</span>
+        </label>
+      </div>
+    </div>
+
+    <!-- Full / Business Name -->
+    <div class="sm:col-span-2">
+      <label class="block text-xs font-semibold ink-dim mb-1.5">
+        <%= if @form_data["entity_type"] == "company", do: "Company / Business name", else: "Full name" %>
+      </label>
+      <input
+        type="text"
+        name="names"
+        value={@form_data["names"]}
+        required
+        class="field-input w-full rounded-lg px-4 py-2.5 text-sm"
+      />
+    </div>
+
+    <!-- Email Address (Read-only) -->
+    <div class="sm:col-span-2">
+      <label class="block text-xs font-semibold ink-dim mb-1.5">
+        Email address
+      </label>
+      <input
+        type="email"
+        name="email"
+        value={@form_data["email"]}
+        readonly
+        class="field-input w-full rounded-lg px-4 py-2.5 text-sm"
+      />
+    </div>
+
+    <!-- Primary Phone -->
+    <div>
+      <label class="block text-xs font-semibold ink-dim mb-1.5">
+        Primary phone number
+      </label>
+      <input
+        type="tel"
+        name="phone"
+        value={@form_data["phone"]}
+        placeholder="07XX XXX XXX"
+        required
+        class="field-input w-full rounded-lg px-4 py-2.5 text-sm"
+      />
+    </div>
+
+    <!-- WhatsApp Phone -->
+    <div>
+      <label class="block text-xs font-semibold ink-dim mb-1.5">
+        WhatsApp number
+      </label>
+      <input
+        type="tel"
+        name="whatsapp_phone"
+        value={@form_data["whatsapp_phone"]}
+        placeholder="07XX XXX XXX"
+        class="field-input w-full rounded-lg px-4 py-2.5 text-sm"
+      />
+    </div>
+
+    <!-- Residence Location -->
+    <div class="sm:col-span-2">
+      <label class="block text-xs font-semibold ink-dim mb-1.5">
+        County / Town of residence
+      </label>
+      <input
+        type="text"
+        name="residence_location"
+        value={@form_data["residence_location"]}
+        placeholder="e.g. Nairobi, Kisii, Kiambu"
+        class="field-input w-full rounded-lg px-4 py-2.5 text-sm"
+      />
+    </div>
+  </div>
+</section>
 
     <!-- STEP 2 -->
-                        <section class={if @step == 2, do: "block", else: "hidden"}>
-                          <h2 class="font-serif-display text-lg ink mb-1">Identity verification</h2>
-                          <p class="ink-dim text-sm mb-5">
-                            Your ID must be valid and clearly legible.
-                          </p>
-                          <div class="grid sm:grid-cols-2 gap-4">
-                            <div>
-                              <label class="block text-xs font-semibold ink-dim mb-1.5">
-                                ID type
-                              </label>
-                              <select
-                                name="id_type"
-                                class="field-input w-full rounded-lg px-4 py-2.5 text-sm"
-                              >
-                                <option selected={@form_data["id_type"] == "National ID"}>
-                                  National ID
-                                </option>
-                                <option selected={@form_data["id_type"] == "Passport"}>
-                                  Passport
-                                </option>
-                                <option selected={@form_data["id_type"] == "Alien ID"}>
-                                  Alien ID
-                                </option>
-                              </select>
-                            </div>
-                            <div>
-                              <label class="block text-xs font-semibold ink-dim mb-1.5">
-                                ID / passport number
-                              </label>
-                              <input
-                                type="text"
-                                name="id_number"
-                                value={@form_data["id_number"]}
-                                placeholder="e.g. 32011245"
-                                class="field-input w-full rounded-lg px-4 py-2.5 text-sm"
-                              />
-                            </div>
-                            <div>
-                              <label class="block text-xs font-semibold ink-dim mb-1.5">
-                                ID &mdash; front
-                              </label>
-                              <label class="file-drop rounded-lg px-4 py-4 flex items-center gap-3 cursor-pointer">
-                                <svg
-                                  width="18"
-                                  height="18"
-                                  viewBox="0 0 24 24"
-                                  fill="none"
-                                  stroke="currentColor"
-                                  class="text-accent shrink-0"
-                                  stroke-width="2"
-                                  stroke-linecap="round"
-                                  stroke-linejoin="round"
-                                >
-                                  <path d="M12 16V4M12 4 7 9M12 4l5 5" /><path d="M20 16v3a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-3" />
-                                </svg>
-                                <span class="min-w-0 break-words text-xs ink-dim">
-                                  Upload photo or scan
-                                </span>
-                                <input type="file" class="hidden" accept="image/*,.pdf" />
-                              </label>
-                            </div>
-                            <div>
-                              <label class="block text-xs font-semibold ink-dim mb-1.5">
-                                ID &mdash; back
-                              </label>
-                              <label class="file-drop rounded-lg px-4 py-4 flex items-center gap-3 cursor-pointer">
-                                <svg
-                                  width="18"
-                                  height="18"
-                                  viewBox="0 0 24 24"
-                                  fill="none"
-                                  stroke="currentColor"
-                                  class="text-accent shrink-0"
-                                  stroke-width="2"
-                                  stroke-linecap="round"
-                                  stroke-linejoin="round"
-                                >
-                                  <path d="M12 16V4M12 4 7 9M12 4l5 5" /><path d="M20 16v3a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-3" />
-                                </svg>
-                                <span class="min-w-0 break-words text-xs ink-dim">
-                                  Upload photo or scan
-                                </span>
-                                <input type="file" class="hidden" accept="image/*,.pdf" />
-                              </label>
-                            </div>
-                          </div>
-                        </section>
 
+<!-- STEP 2 -->
+<section class={if @step == 2, do: "block", else: "hidden"}>
+  <h2 class="font-serif-display text-lg ink mb-1">Identity verification</h2>
+  <p class="ink-dim text-sm mb-5">
+    <%= if @form_data["entity_type"] == "company" do %>
+      Upload legal business registration details and tax documentation.
+    <% else %>
+      Provide your legal identity documents and tax PIN.
+    <% end %>
+  </p>
+  <div class="grid sm:grid-cols-2 gap-4">
+    <!-- ID Type -->
+    <div>
+      <label class="block text-xs font-semibold ink-dim mb-1.5">
+        <%= if @form_data["entity_type"] == "company", do: "Document type", else: "ID type" %>
+      </label>
+      <select name="id_type" class="field-input w-full rounded-lg px-4 py-2.5 text-sm">
+        <%= if @form_data["entity_type"] == "company" do %>
+          <option selected={@form_data["id_type"] == "Certificate of Incorporation"}>Certificate of Incorporation</option>
+          <option selected={@form_data["id_type"] == "Business Registration"}>Business Registration</option>
+        <% else %>
+          <option selected={@form_data["id_type"] == "National ID"}>National ID</option>
+          <option selected={@form_data["id_type"] == "Passport"}>Passport</option>
+          <option selected={@form_data["id_type"] == "Alien ID"}>Alien ID</option>
+        <% end %>
+      </select>
+    </div>
+
+    <!-- ID Number -->
+    <div>
+      <label class="block text-xs font-semibold ink-dim mb-1.5">
+        <%= if @form_data["entity_type"] == "company", do: "Registration / CPR number", else: "ID / Passport number" %>
+      </label>
+      <input
+        type="text"
+        name="id_number"
+        value={@form_data["id_number"]}
+        placeholder={if @form_data["entity_type"] == "company", do: "e.g. PVT-AB1234", else: "e.g. 32011245"}
+        class="field-input w-full rounded-lg px-4 py-2.5 text-sm"
+      />
+    </div>
+
+    <!-- KRA PIN -->
+    <div class="sm:col-span-2">
+      <label class="block text-xs font-semibold ink-dim mb-1.5">KRA PIN number</label>
+      <input
+        type="text"
+        name="kra_pin"
+        value={@form_data["kra_pin"]}
+        placeholder="e.g. A012345678X"
+        class="field-input w-full uppercase rounded-lg px-4 py-2.5 text-sm"
+      />
+    </div>
+
+    <!-- Front Upload -->
+    <div>
+      <label class="block text-xs font-semibold ink-dim mb-1.5">
+        <%= if @form_data["entity_type"] == "company", do: "Registration certificate", else: "ID — front" %>
+      </label>
+      <div class="file-drop rounded-lg p-3.5 relative hover:border-accent transition">
+        <.live_file_input upload={@uploads.id_front} class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
+        <%= if Enum.empty?(@uploads.id_front.entries) do %>
+          <div class="flex items-center gap-3">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" class="text-accent shrink-0" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 16V4M12 4 7 9M12 4l5 5" /><path d="M20 16v3a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-3" />
+            </svg>
+            <span class="min-w-0 break-words text-xs ink-dim">Upload photo or scan</span>
+          </div>
+        <% else %>
+          <%= for entry <- @uploads.id_front.entries do %>
+            <div class="flex items-center justify-between gap-2 z-20 relative">
+              <span class="text-xs font-medium ink truncate"><%= entry.client_name %></span>
+              <button type="button" phx-click="cancel_upload" phx-value-ref={entry.ref} phx-value-upload="id_front" class="text-xs text-danger font-semibold hover:underline">Remove</button>
+            </div>
+          <% end %>
+        <% end %>
+      </div>
+    </div>
+
+    <!-- Back Upload -->
+    <div>
+      <label class="block text-xs font-semibold ink-dim mb-1.5">
+        <%= if @form_data["entity_type"] == "company", do: "CR12 / Tax cert", else: "ID — back" %>
+      </label>
+      <div class="file-drop rounded-lg p-3.5 relative hover:border-accent transition">
+        <.live_file_input upload={@uploads.id_back} class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
+        <%= if Enum.empty?(@uploads.id_back.entries) do %>
+          <div class="flex items-center gap-3">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" class="text-accent shrink-0" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 16V4M12 4 7 9M12 4l5 5" /><path d="M20 16v3a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-3" />
+            </svg>
+            <span class="min-w-0 break-words text-xs ink-dim">Upload photo or scan</span>
+          </div>
+        <% else %>
+          <%= for entry <- @uploads.id_back.entries do %>
+            <div class="flex items-center justify-between gap-2 z-20 relative">
+              <span class="text-xs font-medium ink truncate"><%= entry.client_name %></span>
+              <button type="button" phx-click="cancel_upload" phx-value-ref={entry.ref} phx-value-upload="id_back" class="text-xs text-danger font-semibold hover:underline">Remove</button>
+            </div>
+          <% end %>
+        <% end %>
+      </div>
+    </div>
+  </div>
+</section>
     <!-- STEP 3 -->
-                        <section class={if @step == 3, do: "block", else: "hidden"}>
-                          <h2 class="font-serif-display text-lg ink mb-1">Proof of ownership</h2>
-                          <p class="ink-dim text-sm mb-5">
-                            Add the property and the document that proves you own or manage it.
-                          </p>
-                          <div class="grid sm:grid-cols-2 gap-4">
-                            <div class="sm:col-span-2">
-                              <label class="block text-xs font-semibold ink-dim mb-1.5">
-                                Property name / address
-                              </label>
-                              <input
-                                type="text"
-                                name="property"
-                                value={@form_data["property"]}
-                                placeholder="e.g. Kilimani Heights, Nairobi"
-                                class="field-input w-full rounded-lg px-4 py-2.5 text-sm"
-                              />
-                            </div>
-                            <div>
-                              <label class="block text-xs font-semibold ink-dim mb-1.5">
-                                Ownership type
-                              </label>
-                              <select
-                                name="ownership_type"
-                                class="field-input w-full rounded-lg px-4 py-2.5 text-sm"
-                              >
-                                <option selected={@form_data["ownership_type"] == "Freehold title"}>
-                                  Freehold title
-                                </option>
-                                <option selected={@form_data["ownership_type"] == "Leasehold title"}>
-                                  Leasehold title
-                                </option>
-                                <option selected={@form_data["ownership_type"] == "Sectional title"}>
-                                  Sectional title
-                                </option>
-                                <option selected={
-                                  @form_data["ownership_type"] ==
-                                    "Power of attorney / management agreement"
-                                }>
-                                  Power of attorney / management agreement
-                                </option>
-                              </select>
-                            </div>
-                            <div>
-                              <label class="block text-xs font-semibold ink-dim mb-1.5">
-                                Title deed / LR number
-                              </label>
-                              <input
-                                type="text"
-                                name="lr_number"
-                                value={@form_data["lr_number"]}
-                                placeholder="e.g. Nairobi/Block 99/145"
-                                class="field-input w-full rounded-lg px-4 py-2.5 text-sm"
-                              />
-                            </div>
-                            <div class="sm:col-span-2">
-                              <label class="block text-xs font-semibold ink-dim mb-1.5">
-                                Ownership document
-                              </label>
-                              <label class="file-drop rounded-lg px-4 py-4 flex items-center gap-3 cursor-pointer">
-                                <svg
-                                  width="18"
-                                  height="18"
-                                  viewBox="0 0 24 24"
-                                  fill="none"
-                                  stroke="currentColor"
-                                  class="text-accent shrink-0"
-                                  stroke-width="2"
-                                  stroke-linecap="round"
-                                  stroke-linejoin="round"
-                                >
-                                  <path d="M12 16V4M12 4 7 9M12 4l5 5" /><path d="M20 16v3a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-3" />
-                                </svg>
-                                <span class="min-w-0 break-words text-xs ink-dim">
-                                  Title deed, lease, or management agreement (PDF)
-                                </span>
-                                <input type="file" class="hidden" accept="image/*,.pdf" />
-                              </label>
-                            </div>
-                          </div>
-                        </section>
+<!-- STEP 3 -->
+<section class={if @step == 3, do: "block", else: "hidden"}>
+  <h2 class="font-serif-display text-lg ink mb-1">Proof of ownership & property details</h2>
+  <p class="ink-dim text-sm mb-5">
+    Provide details about your property portfolio and legal ownership documents.
+  </p>
+  <div class="grid sm:grid-cols-2 gap-4">
+    <!-- Listing Purpose -->
+    <div class="sm:col-span-2">
+      <label class="block text-xs font-semibold ink-dim mb-1.5">
+        Primary intent for listings
+      </label>
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <label class="flex items-center gap-2 border border-token rounded-lg p-3 cursor-pointer panel-alt">
+          <input
+            type="radio"
+            name="listing_purpose"
+            value="renting"
+            checked={@form_data["listing_purpose"] == "renting"}
+            class="text-accent"
+          />
+          <span class="text-xs font-medium ink">Renting</span>
+        </label>
+        <label class="flex items-center gap-2 border border-token rounded-lg p-3 cursor-pointer panel-alt">
+          <input
+            type="radio"
+            name="listing_purpose"
+            value="leasing"
+            checked={@form_data["listing_purpose"] == "leasing"}
+            class="text-accent"
+          />
+          <span class="text-xs font-medium ink">Leasing</span>
+        </label>
+        <label class="flex items-center gap-2 border border-token rounded-lg p-3 cursor-pointer panel-alt">
+          <input
+            type="radio"
+            name="listing_purpose"
+            value="selling"
+            checked={@form_data["listing_purpose"] == "selling"}
+            class="text-accent"
+          />
+          <span class="text-xs font-medium ink">Selling</span>
+        </label>
+        <label class="flex items-center gap-2 border border-token rounded-lg p-3 cursor-pointer panel-alt">
+          <input
+            type="radio"
+            name="listing_purpose"
+            value="mixed"
+            checked={@form_data["listing_purpose"] == "mixed"}
+            class="text-accent"
+          />
+          <span class="text-xs font-medium ink">Mixed-use</span>
+        </label>
+      </div>
+    </div>
 
+    <!-- Property Name -->
+    <div>
+      <label class="block text-xs font-semibold ink-dim mb-1.5">
+        Property / Building name
+      </label>
+      <input
+        type="text"
+        name="property_name"
+        value={@form_data["property_name"]}
+        placeholder="e.g. Kilimani Heights, Sunrise Apartments"
+        class="field-input w-full rounded-lg px-4 py-2.5 text-sm"
+      />
+    </div>
+
+    <!-- Property Location -->
+    <div>
+      <label class="block text-xs font-semibold ink-dim mb-1.5">
+        Exact property location
+      </label>
+      <input
+        type="text"
+        name="property_location"
+        value={@form_data["property_location"]}
+        placeholder="e.g. Kilimani, Off Argwings Kodhek Rd, Nairobi"
+        class="field-input w-full rounded-lg px-4 py-2.5 text-sm"
+      />
+    </div>
+
+    <!-- Ownership Type -->
+    <div>
+      <label class="block text-xs font-semibold ink-dim mb-1.5">
+        Ownership type
+      </label>
+      <select
+        name="ownership_type"
+        class="field-input w-full rounded-lg px-4 py-2.5 text-sm"
+      >
+        <option selected={@form_data["ownership_type"] == "Freehold title"}>
+          Freehold title
+        </option>
+        <option selected={@form_data["ownership_type"] == "Leasehold title"}>
+          Leasehold title
+        </option>
+        <option selected={@form_data["ownership_type"] == "Sectional title"}>
+          Sectional title
+        </option>
+        <option selected={@form_data["ownership_type"] == "Power of attorney / management agreement"}>
+          Power of attorney / management agreement
+        </option>
+      </select>
+    </div>
+
+    <!-- Title Deed / LR Number -->
+    <div>
+      <label class="block text-xs font-semibold ink-dim mb-1.5">
+        Title deed / LR number
+      </label>
+      <input
+        type="text"
+        name="lr_number"
+        value={@form_data["lr_number"]}
+        placeholder="e.g. Nairobi/Block 99/145"
+        class="field-input w-full rounded-lg px-4 py-2.5 text-sm"
+      />
+    </div>
+
+    <!-- Estimated Total Units -->
+    <div class="sm:col-span-2">
+      <label class="block text-xs font-semibold ink-dim mb-1.5">
+        Estimated total units on property
+      </label>
+      <input
+        type="number"
+        name="total_units"
+        min="1"
+        value={@form_data["total_units"]}
+        placeholder="e.g. 12"
+        class="field-input w-full rounded-lg px-4 py-2.5 text-sm"
+      />
+    </div>
+
+    <!-- Ownership Document Upload -->
+    <div class="sm:col-span-2">
+      <label class="block text-xs font-semibold ink-dim mb-1.5">
+        Ownership document (Title Deed, Lease, or Management Agreement)
+      </label>
+      <div class="file-drop rounded-lg p-3.5 relative hover:border-accent transition">
+        <.live_file_input upload={@uploads.ownership_doc} class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
+
+        <%= if Enum.empty?(@uploads.ownership_doc.entries) do %>
+          <div class="flex items-center gap-3">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" class="text-accent shrink-0" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 16V4M12 4 7 9M12 4l5 5" /><path d="M20 16v3a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-3" />
+            </svg>
+            <span class="min-w-0 break-words text-xs ink-dim">
+              Upload PDF, JPG, or PNG document
+            </span>
+          </div>
+        <% else %>
+          <%= for entry <- @uploads.ownership_doc.entries do %>
+            <div class="flex items-center justify-between gap-2 z-20 relative">
+              <div class="flex items-center gap-2 min-w-0">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" class="text-accent shrink-0" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+                </svg>
+                <span class="text-xs font-medium ink truncate"><%= entry.client_name %></span>
+              </div>
+              <button
+                type="button"
+                phx-click="cancel_upload"
+                phx-value-ref={entry.ref}
+                phx-value-upload="ownership_doc"
+                class="text-xs text-danger font-semibold hover:underline shrink-0"
+              >
+                Remove
+              </button>
+            </div>
+          <% end %>
+        <% end %>
+      </div>
+    </div>
+  </div>
+</section>
     <!-- STEP 4 -->
                         <section class={if @step == 4, do: "block", else: "hidden"}>
                           <h2 class="font-serif-display text-lg ink mb-1">Payout details</h2>
