@@ -442,7 +442,7 @@ defmodule HomeWeb.Text.Test do
             </button>
           <% end %>
         </div>
-
+        
     <!-- SEARCH BUTTON -->
         <button
           phx-click="toggle_search"
@@ -459,7 +459,7 @@ defmodule HomeWeb.Text.Test do
             />
           </svg>
         </button>
-
+        
     <!-- SEARCH OVERLAY -->
         <%= if @show_search do %>
           <div class="absolute right-0 top-12 z-[100] w-[min(80vw,20rem)] rounded-2xl p-2 bottom-nav-glass shadow-2xl">
@@ -1044,7 +1044,7 @@ defmodule HomeWeb.Text.Test do
           </div>
         </div>
       </div>
-
+      
     <!-- HOUSE CARDS -->
       <%= if @view_mode == :feed do %>
         {render_small_cards(assigns)}
@@ -1063,7 +1063,7 @@ defmodule HomeWeb.Text.Test do
             data-index={index + 1}
             data-house-id={house.id}
           >
-
+            
     <!-- Blurred background from first room image -->
             <div class="absolute inset-0 z-0 overflow-hidden">
               <img
@@ -1117,7 +1117,7 @@ defmodule HomeWeb.Text.Test do
                       />
                     </svg>
                   </button>
-
+                  
     <!-- Carousel Controls -->
                   <button
                     phx-click="carousel_prev"
@@ -1147,7 +1147,7 @@ defmodule HomeWeb.Text.Test do
                       />
                     </svg>
                   </button>
-
+                  
     <!-- Dots -->
                   <div class="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-1.5">
                     <%= for {_room, ridx} <- Enum.with_index(house.rooms) do %>
@@ -1158,7 +1158,7 @@ defmodule HomeWeb.Text.Test do
                       </div>
                     <% end %>
                   </div>
-
+                  
     <!-- Room Badge -->
                   <div
                     id={"room-badge-desktop-#{house.id}-#{room_idx}"}
@@ -1182,7 +1182,7 @@ defmodule HomeWeb.Text.Test do
                     </p>
                   </div>
                 </div>
-
+                
     <!-- Right: Details Panel -->
                 <div class="flex w-[34%] max-w-md flex-col justify-center glass-panel rounded-3xl p-6 pointer-events-auto">
                   <div class="mb-5">
@@ -1305,7 +1305,7 @@ defmodule HomeWeb.Text.Test do
                   </div>
                 </div>
               </div>
-
+              
     <!-- Mobile: Stacked Card -->
               <div class="absolute inset-x-0 top-28 bottom-24 z-10 flex items-stretch p-4 pointer-events-none md:hidden">
                 <div class="glass-panel mx-auto flex h-full w-full max-w-md flex-col overflow-hidden rounded-3xl pointer-events-auto">
@@ -1407,7 +1407,7 @@ defmodule HomeWeb.Text.Test do
                       </p>
                     </div>
                   </div>
-
+                  
     i    <!-- Info -->
                   <div class="shrink-0 p-4">
                     <div class="mb-3">

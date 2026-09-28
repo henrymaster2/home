@@ -4,7 +4,7 @@ defmodule Home.AccountsTest do
   alias Home.Accounts
 
   import Home.AccountsFixtures
-  alias Home.Accounts.{User, UserToken}
+  alias Home.Accounts.{AdminLiteInvite, User, UserToken}
 
   describe "get_user_by_email/1" do
     test "does not return the user if the email does not exist" do
@@ -370,6 +370,31 @@ defmodule Home.AccountsTest do
     end
   end
 
+  describe "admin lite invites" do
+    test "list_admin_lite_invites/0 excludes landlord invite links" do
+      admin = admin_user_fixture()
+      admin_lite_invite = invite_fixture(admin, "admin_lite")
+      legacy_admin_lite_invite = invite_fixture(admin, nil)
+      landlord_invite = invite_fixture(admin, "landlord")
+
+      listed_invite_ids =
+        Accounts.list_admin_lite_invites()
+        |> Enum.map(& &1.id)
+
+      assert admin_lite_invite.id in listed_invite_ids
+      assert legacy_admin_lite_invite.id in listed_invite_ids
+      refute landlord_invite.id in listed_invite_ids
+    end
+
+    test "delete_admin_lite_invite/1 does not delete landlord invite links" do
+      admin = admin_user_fixture()
+      landlord_invite = invite_fixture(admin, "landlord")
+
+      assert Accounts.delete_admin_lite_invite(landlord_invite.id) == {:error, :not_found}
+      assert Repo.get(AdminLiteInvite, landlord_invite.id)
+    end
+  end
+
   describe "deliver_login_instructions/2" do
     setup do
       %{user: unconfirmed_user_fixture()}
@@ -393,5 +418,25 @@ defmodule Home.AccountsTest do
     test "does not include password" do
       refute inspect(%User{password: "123456"}) =~ "password: \"123456\""
     end
+  end
+
+  defp admin_user_fixture do
+    user_fixture(%{
+      email: unique_user_email(),
+      names: "Super Admin",
+      phone: "0712345678",
+      id_number: "12345678",
+      role: "admin"
+    })
+  end
+
+  defp invite_fixture(admin, invite_type) do
+    Repo.insert!(%AdminLiteInvite{
+      email: "#{invite_type}-#{System.unique_integer([:positive])}@example.com",
+      token: Ecto.UUID.generate(),
+      invite_type: invite_type,
+      expires_at: DateTime.utc_now(:second) |> DateTime.add(7, :day),
+      created_by_id: admin.id
+    })
   end
 end

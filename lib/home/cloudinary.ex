@@ -1,21 +1,11 @@
 defmodule Home.Cloudinary do
   @moduledoc """
-  Minimal signed-upload client for Cloudinary. No external HTTP dependency —
-  uses Erlang's built-in `:httpc`.
+  Minimal signed-upload client for Cloudinary using Req.
 
   Reads credentials from environment variables at runtime:
     CLOUDINARY_CLOUD_NAME
     CLOUDINARY_API_KEY
     CLOUDINARY_API_SECRET
-
-  Make sure `:inets` and `:ssl` are started. In `mix.exs`, under `application/0`:
-
-      def application do
-        [
-          mod: {Home.Application, []},
-          extra_applications: [:logger, :runtime_tools, :inets, :ssl]
-        ]
-      end
   """
 
   @doc """
@@ -30,41 +20,29 @@ defmodule Home.Cloudinary do
       timestamp = System.system_time(:second) |> Integer.to_string()
       signature = sign(%{"timestamp" => timestamp}, api_secret)
 
-      url = "https://api.cloudinary.com/v1_1/#{cloud_name}/image/upload"
-      boundary = "----ElixirCloudinaryBoundary#{System.unique_integer([:positive])}"
+      url = "https://api.cloudinary.com/v1_1/#{cloud_name}/auto/upload"
 
-      body =
-        [
-          text_part(boundary, "api_key", api_key),
-          text_part(boundary, "timestamp", timestamp),
-          text_part(boundary, "signature", signature),
-          file_part(boundary, "file", Path.basename(local_path), File.read!(local_path)),
-          "--#{boundary}--\r\n"
+      Req.post(url,
+        form_multipart: [
+          api_key: api_key,
+          timestamp: timestamp,
+          signature: signature,
+          file: {File.stream!(local_path, [], 2048), filename: Path.basename(local_path)}
         ]
-        |> IO.iodata_to_binary()
+      )
+      |> case do
+        {:ok, %Req.Response{status: 200, body: %{"secure_url" => secure_url}}} ->
+          {:ok, secure_url}
 
-      do_request(url, boundary, body)
-    end
-  end
+        {:ok, %Req.Response{status: 200, body: body}} ->
+          {:error, {:unexpected_response, body}}
 
-  defp do_request(url, boundary, body) do
-    content_type = ~c"multipart/form-data; boundary=#{boundary}"
+        {:ok, %Req.Response{status: status, body: body}} ->
+          {:error, {:http_error, status, body}}
 
-    request = {String.to_charlist(url), [], content_type, body}
-
-    case :httpc.request(:post, request, [], body_format: :binary) do
-      {:ok, {{_http_version, 200, _reason}, _headers, resp_body}} ->
-        case Jason.decode(resp_body) do
-          {:ok, %{"secure_url" => secure_url}} -> {:ok, secure_url}
-          {:ok, other} -> {:error, {:unexpected_response, other}}
-          {:error, reason} -> {:error, {:invalid_json, reason}}
-        end
-
-      {:ok, {{_http_version, status, _reason}, _headers, resp_body}} ->
-        {:error, {:http_error, status, resp_body}}
-
-      {:error, reason} ->
-        {:error, reason}
+        {:error, reason} ->
+          {:error, reason}
+      end
     end
   end
 
@@ -85,16 +63,4 @@ defmodule Home.Cloudinary do
     |> Base.encode16(case: :lower)
   end
 
-  defp text_part(boundary, name, value) do
-    "--#{boundary}\r\n" <>
-      "Content-Disposition: form-data; name=\"#{name}\"\r\n\r\n" <>
-      "#{value}\r\n"
-  end
-
-  defp file_part(boundary, name, filename, content) do
-    "--#{boundary}\r\n" <>
-      "Content-Disposition: form-data; name=\"#{name}\"; filename=\"#{filename}\"\r\n" <>
-      "Content-Type: application/octet-stream\r\n\r\n" <>
-      content <> "\r\n"
-  end
 end

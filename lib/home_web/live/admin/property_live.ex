@@ -18,15 +18,15 @@ defmodule HomeWeb.Admin.PropertyLive do
        |> put_flash(:error, "You are not authorized to access this page.")
        |> redirect(to: unauthorized_admin_path(current_user))}
     else
-    if connected?(socket), do: Process.send_after(self(), :tick, @tick_interval)
+      if connected?(socket), do: Process.send_after(self(), :tick, @tick_interval)
 
-    socket =
-      socket
-      |> assign(:mobile_menu_open, false)
-      |> assign(:search_query, "")
-      |> fetch_properties()
+      socket =
+        socket
+        |> assign(:mobile_menu_open, false)
+        |> assign(:search_query, "")
+        |> fetch_properties()
 
-    {:ok, socket}
+      {:ok, socket}
     end
   end
 

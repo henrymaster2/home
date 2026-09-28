@@ -8,6 +8,8 @@ defmodule Home.Accounts.VerificationRequest do
     field :phone, :string
     field :status, :string, default: "pending"
     field :user_id, :integer
+    field :draft_data, :map, default: %{}
+    field :draft_step, :integer, default: 1
 
     timestamps()
   end
@@ -15,12 +17,9 @@ defmodule Home.Accounts.VerificationRequest do
   @doc false
   def changeset(verification_request, attrs) do
     verification_request
-    |> cast(attrs, [:names, :email, :phone, :status, :user_id])
+    |> cast(attrs, [:names, :email, :phone, :status, :user_id, :draft_data, :draft_step])
     |> validate_required([:names, :email, :phone])
     # Add email format validation if needed
     |> validate_format(:email, ~r/^[^\s]+@[^\s]+$/, message: "must have the @ sign and no spaces")
   end
-
-
-
 end

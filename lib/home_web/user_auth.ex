@@ -112,30 +112,30 @@ defmodule HomeWeb.UserAuth do
     |> maybe_write_remember_me_cookie(token, params, remember_me)
   end
 
- # Do not renew session if the user is already logged in
+  # Do not renew session if the user is already logged in
   # to prevent CSRF errors or data being lost in tabs that are still open
   defp renew_session(conn, nil) do
-  # If there is no user, just safely clear the session without checking IDs
-  delete_csrf_token()
-
-  conn
-  |> configure_session(renew: true)
-  |> clear_session()
-end
-
-defp renew_session(conn, user) do
-  current_user = conn.assigns[:current_scope] && conn.assigns.current_scope.user
-
-  if current_user && current_user.id == user.id do
-    conn
-  else
+    # If there is no user, just safely clear the session without checking IDs
     delete_csrf_token()
 
     conn
     |> configure_session(renew: true)
     |> clear_session()
   end
-end
+
+  defp renew_session(conn, user) do
+    current_user = conn.assigns[:current_scope] && conn.assigns.current_scope.user
+
+    if current_user && current_user.id == user.id do
+      conn
+    else
+      delete_csrf_token()
+
+      conn
+      |> configure_session(renew: true)
+      |> clear_session()
+    end
+  end
 
   defp renew_session(conn, _user) do
     delete_csrf_token()
@@ -228,8 +228,8 @@ end
   Plug for routes that require the user to be authenticated.
   """
   def require_authenticated_user(conn, _opts) do
-     if conn.assigns[:current_scope] && conn.assigns.current_scope.user do
-    conn
+    if conn.assigns[:current_scope] && conn.assigns.current_scope.user do
+      conn
     else
       conn
       |> put_flash(:error, "You must log in to access this page.")

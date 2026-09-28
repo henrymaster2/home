@@ -63,14 +63,13 @@ defmodule HomeWeb.Router do
 
     live_session :require_authenticated_user,
       on_mount: [{HomeWeb.UserAuth, :require_authenticated}] do
-
-        # Admin pages
-    live "/admin", Admin.DashboardLive
-    live "/admin/lite", Text.Lite
-    live "/admin/bookings", Admin.BookingsLive
-    live "/admin/property", Admin.PropertyLive
-    live "/home", Lite.DashboardLive
-    #settings
+      # Admin pages
+      live "/admin", Admin.DashboardLive
+      live "/admin/lite", Text.Lite
+      live "/admin/bookings", Admin.BookingsLive
+      live "/admin/property", Admin.PropertyLive
+      live "/home", Lite.DashboardLive
+      # settings
       live "/users/settings", UserLive.Settings, :edit
       live "/users/settings/confirm-email/:token", UserLive.Settings, :confirm_email
     end

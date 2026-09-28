@@ -1,10 +1,13 @@
 defmodule Home.Accounts do
   @moduledoc """
-  The Accounts context.
+  The Accounts context handling users, authentication, tokens, admin invites,
+  and landlord verification workflows.
   """
 
   import Ecto.Query, warn: false
   alias Home.Repo
+  alias Home.Accounts.Landlord
+  alias Home.Accounts.LandlordDocument
   alias Home.Accounts.AdminLiteInvite
   alias Home.Accounts.{User, UserToken, UserNotifier, UserIdentity}
   alias Home.Accounts.VerificationRequest
@@ -12,46 +15,24 @@ defmodule Home.Accounts do
   @pubsub Home.PubSub
   @topic "verification_requests"
 
-  def subscribe_verification_requests do
-    Phoenix.PubSub.subscribe(@pubsub, @topic)
-  end
-
-  def create_verification_request(attrs) do
-    %VerificationRequest{}
-    # Explicitly module-scoped
-    |> VerificationRequest.changeset(attrs)
-    |> Repo.insert()
-    |> case do
-      {:ok, request} ->
-        Phoenix.PubSub.broadcast(@pubsub, @topic, {:new_verification_request, request})
-        {:ok, request}
-
-      error ->
-        error
-    end
-  end
+  # ============================================================================
+  # User Queries & Registration
+  # ============================================================================
 
   @doc """
-  Returns an '%Ecto.Changeset{}' for tracking user registration changes.
+  Gets a single user by ID.
+  Raises `Ecto.NoResultsError` if the User does not exist.
+
+  ## Examples
+
+      iex> get_user!(123)
+      %User{}
+
+      iex> get_user!(456)
+      ** (Ecto.NoResultsError)
+
   """
-  def change_user_registration(%User{} = user, attrs \\ %{}) do
-    User.registration_changeset(user, attrs, validate_unique: false)
-  end
-
-  def change_user_login(user, attrs \\ %{}) do
-    User.change_user_login(user, attrs)
-  end
-
-  @doc """
-  Registers a user in the database
-  """
-  def register_user(attrs) do
-    %User{}
-    |> User.registration_changeset(attrs)
-    |> Repo.insert()
-  end
-
-  ## Database getters
+  def get_user!(id), do: Repo.get!(User, id)
 
   @doc """
   Gets a user by email.
@@ -69,7 +50,58 @@ defmodule Home.Accounts do
     Repo.get_by(User, email: email)
   end
 
-  # for finding user and creating if no one this is for sign in by google
+  @doc """
+  Gets a user by email and password.
+
+  ## Examples
+
+      iex> get_user_by_email_and_password("foo@example.com", "correct_password")
+      %User{}
+
+      iex> get_user_by_email_and_password("foo@example.com", "invalid_password")
+      nil
+
+  """
+  def get_user_by_email_and_password(email, password)
+      when is_binary(email) and is_binary(password) do
+    user = Repo.get_by(User, email: email)
+
+    IO.inspect(user, label: "USER FROM DATABASE")
+    IO.inspect(User.valid_password?(user, password), label: "PASSWORD VALID?")
+
+    if User.valid_password?(user, password), do: user
+  end
+
+  @doc """
+  Registers a user in the database.
+  """
+  def register_user(attrs) do
+    %User{}
+    |> User.registration_changeset(attrs)
+    |> Repo.insert()
+  end
+
+  @doc """
+  Returns an `%Ecto.Changeset{}` for tracking user registration changes.
+  """
+  def change_user_registration(%User{} = user, attrs \\ %{}) do
+    User.registration_changeset(user, attrs, validate_unique: false)
+  end
+
+  @doc """
+  Returns an `%Ecto.Changeset{}` for tracking user login changes.
+  """
+  def change_user_login(user, attrs \\ %{}) do
+    User.change_user_login(user, attrs)
+  end
+
+  # ============================================================================
+  # Google OAuth Authentication
+  # ============================================================================
+
+  @doc """
+  Finds an existing user by Google ID or email, or creates a new user with Google identity.
+  """
   def find_or_create_google_user(google_user) do
     google_id = google_user["sub"]
     email = google_user["email"]
@@ -89,8 +121,7 @@ defmodule Home.Accounts do
     end
   end
 
-  ## for creating google identity
-
+  # Creates a Google UserIdentity record linked to an existing user.
   defp create_google_identity(user, google_id) do
     %UserIdentity{}
     |> UserIdentity.changeset(%{
@@ -105,7 +136,7 @@ defmodule Home.Accounts do
     end
   end
 
-  ## for creating the user
+  # Creates a new user and links a Google identity in a single database transaction.
   defp create_google_user(google_user, google_id) do
     Repo.transact(fn ->
       with {:ok, user} <-
@@ -132,61 +163,12 @@ defmodule Home.Accounts do
     end)
   end
 
-  @doc """
-  Gets a user by email and password.
-
-  ## Examples
-
-      iex> get_user_by_email_and_password("foo@example.com", "correct_password")
-      %User{}
-
-      iex> get_user_by_email_and_password("foo@example.com", "invalid_password")
-      nil
-
-  """
-  def get_user_by_email_and_password(email, password)
-      when is_binary(email) and is_binary(password) do
-    user = Repo.get_by(User, email: email)
-
-    IO.inspect(user, label: "USER FROM DATABASE")
-    IO.inspect(User.valid_password?(user, password), label: "PASSWORD VALID?")
-
-    if User.valid_password?(user, password), do: user
-  end
-
-  @doc """
-  Gets a single user.
-
-  Raises `Ecto.NoResultsError` if the User does not exist.
-
-  ## Examples
-
-      iex> get_user!(123)
-      %User{}
-
-      iex> get_user!(456)
-      ** (Ecto.NoResultsError)
-
-  """
-  def get_user!(id), do: Repo.get!(User, id)
-
-  @doc """
-  Checks whether the user is in sudo mode.
-
-  The user is in sudo mode when the last authentication was done no further
-  than 20 minutes ago. The limit can be given as second argument in minutes.
-  """
-  def sudo_mode?(user, minutes \\ -20)
-
-  def sudo_mode?(%User{authenticated_at: ts}, minutes) when is_struct(ts, DateTime) do
-    DateTime.after?(ts, DateTime.utc_now() |> DateTime.add(minutes, :minute))
-  end
-
-  def sudo_mode?(_user, _minutes), do: false
+  # ============================================================================
+  # Email & Password Management
+  # ============================================================================
 
   @doc """
   Returns an `%Ecto.Changeset{}` for changing the user email.
-
   See `Home.Accounts.User.email_changeset/3` for a list of supported options.
 
   ## Examples
@@ -201,7 +183,6 @@ defmodule Home.Accounts do
 
   @doc """
   Updates the user email using the given token.
-
   If the token matches, the user email is updated and the token is deleted.
   """
   def update_user_email(user, token) do
@@ -222,7 +203,6 @@ defmodule Home.Accounts do
 
   @doc """
   Returns an `%Ecto.Changeset{}` for changing the user password.
-
   See `Home.Accounts.User.password_changeset/3` for a list of supported options.
 
   ## Examples
@@ -237,7 +217,6 @@ defmodule Home.Accounts do
 
   @doc """
   Updates the user password.
-
   Returns a tuple with the updated user, as well as a list of expired tokens.
 
   ## Examples
@@ -255,7 +234,9 @@ defmodule Home.Accounts do
     |> update_user_and_delete_all_tokens()
   end
 
-  ## Session
+  # ============================================================================
+  # Session Tokens & Magic Link Authentication
+  # ============================================================================
 
   @doc """
   Generates a session token.
@@ -268,12 +249,19 @@ defmodule Home.Accounts do
 
   @doc """
   Gets the user with the given signed token.
-
   If the token is valid `{user, token_inserted_at}` is returned, otherwise `nil` is returned.
   """
   def get_user_by_session_token(token) do
     {:ok, query} = UserToken.verify_session_token_query(token)
     Repo.one(query)
+  end
+
+  @doc """
+  Deletes the signed token with the given context.
+  """
+  def delete_user_session_token(token) do
+    Repo.delete_all(from(UserToken, where: [token: ^token, context: "session"]))
+    :ok
   end
 
   @doc """
@@ -290,21 +278,11 @@ defmodule Home.Accounts do
 
   @doc """
   Logs the user in by magic link.
-
   There are three cases to consider:
 
-  1. The user has already confirmed their email. They are logged in
-     and the magic link is expired.
-
-  2. The user has not confirmed their email and no password is set.
-     In this case, the user gets confirmed, logged in, and all tokens -
-     including session ones - are expired. In theory, no other tokens
-     exist but we delete all of them for best security practices.
-
+  1. The user has already confirmed their email. They are logged in and the magic link is expired.
+  2. The user has not confirmed their email and no password is set. They get confirmed, logged in, and all tokens are expired.
   3. The user has not confirmed their email but a password is set.
-     This cannot happen in the default implementation but may be the
-     source of security pitfalls. See the "Mixing magic link and password registration" section of
-     `mix help phx.gen.auth`.
   """
   def login_user_by_magic_link(token) do
     {:ok, query} = UserToken.verify_magic_link_token_query(token)
@@ -314,9 +292,9 @@ defmodule Home.Accounts do
       {%User{confirmed_at: nil, hashed_password: hash}, _token} when not is_nil(hash) ->
         raise """
         magic link log in is not allowed for unconfirmed users with a password set!
-
         This cannot happen with the default implementation, which indicates that you
-        might have adapted the code to a different use case. Please make sure to read the
+        might have adapted the code to a different use case.
+        Please make sure to read the
         "Mixing magic link and password registration" section of `mix help phx.gen.auth`.
         """
 
@@ -334,12 +312,12 @@ defmodule Home.Accounts do
     end
   end
 
-  @doc ~S"""
+  @doc """
   Delivers the update email instructions to the given user.
 
   ## Examples
 
-      iex> deliver_user_update_email_instructions(user, current_email, &url(~p"/users/settings/confirm-email/#{&1}"))
+      iex> deliver_user_update_email_instructions(user, current_email, &url(~p"/users/settings/confirm-email/\#{&1}"))
       {:ok, %{to: ..., body: ...}}
 
   """
@@ -362,15 +340,20 @@ defmodule Home.Accounts do
   end
 
   @doc """
-  Deletes the signed token with the given context.
+  Checks whether the user is in sudo mode.
+  The user is in sudo mode when the last authentication was done no further
+  than 20 minutes ago.
+  The limit can be given as second argument in minutes.
   """
-  def delete_user_session_token(token) do
-    Repo.delete_all(from(UserToken, where: [token: ^token, context: "session"]))
-    :ok
+  def sudo_mode?(user, minutes \\ -20)
+
+  def sudo_mode?(%User{authenticated_at: ts}, minutes) when is_struct(ts, DateTime) do
+    DateTime.after?(ts, DateTime.utc_now() |> DateTime.add(minutes, :minute))
   end
 
-  ## Token helper
+  def sudo_mode?(_user, _minutes), do: false
 
+  # Helper function to update user changeset and invalidate all existing tokens.
   defp update_user_and_delete_all_tokens(changeset) do
     Repo.transact(fn ->
       with {:ok, user} <- Repo.update(changeset) do
@@ -383,6 +366,13 @@ defmodule Home.Accounts do
     end)
   end
 
+  # ============================================================================
+  # Roles & Admin Checks
+  # ============================================================================
+
+  @doc """
+  Checks whether a given user is an admin_lite or has an active admin_lite invite.
+  """
   def admin_lite?(%User{role: "admin_lite"}), do: true
 
   def admin_lite?(%User{email: email}) when is_binary(email) do
@@ -394,9 +384,32 @@ defmodule Home.Accounts do
 
   def admin_lite?(_user), do: false
 
+  @doc """
+  Checks whether a given user is a super admin.
+  """
   def super_admin?(%User{role: "admin"} = user), do: not admin_lite?(user)
   def super_admin?(_user), do: false
 
+  # ============================================================================
+  # Admin & Staff Invites Management
+  # ============================================================================
+
+  @spec create_invite(
+          :invalid
+          | %{optional(:__struct__) => none(), optional(atom() | binary()) => any()}
+        ) :: any()
+  @doc """
+  Creates an invite record for admin_lite or landlord roles.
+  """
+  def create_invite(attrs \\ %{}) do
+    %AdminLiteInvite{}
+    |> AdminLiteInvite.changeset(attrs)
+    |> Repo.insert()
+  end
+
+  @doc """
+  Creates an admin_lite invitation link/token for a specific email address.
+  """
   def create_admin_lite_invite(%User{} = admin, email) do
     if super_admin?(admin) do
       token =
@@ -421,12 +434,16 @@ defmodule Home.Accounts do
     end
   end
 
-  # getting the admin lite token
+  @doc """
+  Gets an admin lite invite by token.
+  """
   def get_admin_lite_invite_by_token(token) do
     Repo.get_by(AdminLiteInvite, token: token)
   end
 
-  # validation function
+  @doc """
+  Validates an invite token, verifying if it exists, is unused, and has not expired.
+  """
   def get_valid_invite_by_token(token) do
     case Repo.get_by(AdminLiteInvite, token: token) do
       nil ->
@@ -444,30 +461,9 @@ defmodule Home.Accounts do
     end
   end
 
-  # for landlord request
-  # def create_verification_request(attrs) do
-  #   %VerificationRequest{}
-  #   |> VerificationRequest.changeset(attrs)
-  #   |> Repo.insert()
-  # end
-
-  # for collecting admin requests from the db
-  def list_verification_requests do
-    Repo.all(VerificationRequest)
-  end
-
-  def get_verification_request_by_email(email) when is_binary(email) do
-    normalized_email = String.trim(email)
-
-    Repo.one(
-      from r in VerificationRequest,
-        where: r.email == ^normalized_email,
-        order_by: [desc: r.inserted_at],
-        limit: 1
-    )
-  end
-
-  # for verfifying token validity
+  @doc """
+  Fetches an invite by token and returns its status (:not_found, :already_used, or :ok).
+  """
   def get_invite_by_token(token) when is_binary(token) do
     case Repo.get_by(AdminLiteInvite, token: token) do
       nil -> {:error, :not_found}
@@ -476,27 +472,41 @@ defmodule Home.Accounts do
     end
   end
 
+  @doc """
+  Marks an AdminLiteInvite record as used.
+  """
   def mark_invite_as_used(%AdminLiteInvite{} = invite) do
     invite
     |> Ecto.Changeset.change(%{used: true})
     |> Repo.update()
   end
 
-  # for fetching admin lite invites
+  @doc """
+  Lists all admin_lite invites ordered by creation date descending.
+  """
   def list_admin_lite_invites do
-    Repo.all(from i in AdminLiteInvite, order_by: [desc: i.inserted_at])
+    Repo.all(
+      from i in AdminLiteInvite,
+        where: i.invite_type == "admin_lite" or is_nil(i.invite_type),
+        order_by: [desc: i.inserted_at]
+    )
   end
 
-  # for suspending admine lites
+  @doc """
+  Deletes an admin_lite invite by ID.
+  """
   def delete_admin_lite_invite(id) do
-    case Repo.get(AdminLiteInvite, id) do
+    case get_staff_invite(id) do
       nil -> {:error, :not_found}
       invite -> Repo.delete(invite)
     end
   end
 
+  @doc """
+  Toggles the suspended state of an admin_lite invite.
+  """
   def toggle_suspend_invite(id) do
-    case Repo.get(AdminLiteInvite, id) do
+    case get_staff_invite(id) do
       nil ->
         {:error, :not_found}
 
@@ -510,12 +520,229 @@ defmodule Home.Accounts do
     end
   end
 
+  # Internal helper to retrieve staff invites by ID.
+  defp get_staff_invite(id) do
+    Repo.one(
+      from i in AdminLiteInvite,
+        where: i.id == ^id and (i.invite_type == "admin_lite" or is_nil(i.invite_type))
+    )
+  end
+
+  # ============================================================================
+  # Verification Requests & PubSub
+  # ============================================================================
+
   @doc """
-  Creates an invite record for admin_lite or landlord roles.
+  Subscribes the caller process to verification request PubSub events.
   """
-  def create_invite(attrs \\ %{}) do
-    %AdminLiteInvite{}
-    |> AdminLiteInvite.changeset(attrs)
+  def subscribe_verification_requests do
+    Phoenix.PubSub.subscribe(@pubsub, @topic)
+  end
+
+  @doc """
+  Creates a verification request and broadcasts a PubSub message upon success.
+  """
+  def create_verification_request(attrs) do
+    %VerificationRequest{}
+    # Explicitly module-scoped
+    |> VerificationRequest.changeset(attrs)
     |> Repo.insert()
+    |> case do
+      {:ok, request} ->
+        Phoenix.PubSub.broadcast(@pubsub, @topic, {:new_verification_request, request})
+        {:ok, request}
+
+      error ->
+        error
+    end
+  end
+
+  @doc """
+  Lists all verification requests and attaches active landlord invite URLs to each item.
+  """
+  def list_verification_requests do
+    # 1. Fetch all verification requests
+    requests = Repo.all(VerificationRequest)
+
+    # 2. Get current time
+    now = DateTime.utc_now()
+
+    # 3. Fetch active, unexpired landlord invites using AdminLiteInvite
+    active_invites =
+      from(i in AdminLiteInvite,
+        where: i.invite_type == "landlord" and i.expires_at > ^now and i.used == false,
+        order_by: [desc: i.inserted_at]
+      )
+      |> Repo.all()
+      |> Enum.uniq_by(& &1.email)
+      |> Map.new(fn invite -> {invite.email, invite} end)
+
+    base_url = HomeWeb.Endpoint.url()
+
+    # 4. Attach active invite link to each request item
+    Enum.map(requests, fn request ->
+      invite = Map.get(active_invites, request.email)
+
+      invite_url =
+        if invite do
+          "#{base_url}/verification?token=#{invite.token}"
+        else
+          nil
+        end
+
+      request
+      |> Map.from_struct()
+      |> Map.put(:active_invite, invite)
+      |> Map.put(:invite_url, invite_url)
+    end)
+  end
+
+  @doc """
+  Checks for an active, unexpired landlord invite associated with the specified email address.
+  """
+  def get_active_landlord_invite_by_email(email) do
+    clean_email = String.trim(email)
+    now = DateTime.utc_now()
+
+    from(i in AdminLiteInvite,
+      where: i.email == ^clean_email and i.invite_type == "landlord" and i.expires_at > ^now and i.used == false,
+      order_by: [desc: i.inserted_at],
+      limit: 1
+    )
+    |> Repo.one()
+  end
+
+  @doc """
+  Gets the most recent verification request associated with an email address.
+  """
+  def get_verification_request_by_email(email) when is_binary(email) do
+    normalized_email = String.trim(email)
+
+    Repo.one(
+      from r in VerificationRequest,
+        where: r.email == ^normalized_email,
+        order_by: [desc: r.inserted_at],
+        limit: 1
+    )
+  end
+
+  @doc """
+  Saves or updates a landlord verification draft step and form data.
+  """
+  def save_verification_draft(nil, attrs, form_data, step) do
+    attrs
+    |> Map.merge(%{
+      "draft_data" => form_data,
+      "draft_step" => step
+    })
+    |> create_verification_request()
+  end
+
+  def save_verification_draft(
+        %VerificationRequest{} = verification_request,
+        attrs,
+        form_data,
+        step
+      ) do
+    attrs =
+      Map.merge(attrs, %{
+        "draft_data" => form_data,
+        "draft_step" => step
+      })
+
+    verification_request
+    |> VerificationRequest.changeset(attrs)
+    |> Repo.update()
+  end
+
+  # ============================================================================
+  # Landlord Onboarding & Document Management
+  # ============================================================================
+
+  @doc """
+  Completes landlord onboarding by creating the User, Landlord, and document rows.
+  """
+  def complete_landlord_registration(invite, form_data) do
+    Repo.transaction(fn ->
+      password = Map.get(form_data, "password") || "DefaultPass123!"
+      password_confirmation = Map.get(form_data, "password_confirmation") || password
+      verification_request = get_verification_request_by_email(invite.email)
+
+      user_attrs = %{
+        "names" => form_data["names"],
+        "email" => invite.email,
+        "phone" => form_data["phone"],
+        "password" => password,
+        "password_confirmation" => password_confirmation,
+        "role" => "landlord"
+      }
+
+      user =
+        case register_user(user_attrs) do
+          {:ok, user} -> user
+          {:error, changeset} -> Repo.rollback(changeset)
+        end
+
+      landlord_attrs =
+        form_data
+        |> Map.put("user_id", user.id)
+        |> Map.put("verification_request_id", verification_request && verification_request.id)
+
+      landlord =
+        %Landlord{}
+        |> Landlord.personal_details_changeset(landlord_attrs)
+        |> Landlord.identity_changeset(landlord_attrs)
+        |> Landlord.property_changeset(landlord_attrs)
+        |> Repo.insert()
+        |> case do
+          {:ok, landlord} -> landlord
+          {:error, changeset} -> Repo.rollback(changeset)
+        end
+
+      form_data
+      |> landlord_document_attrs(landlord, verification_request, invite)
+      |> Enum.each(fn attrs ->
+        %LandlordDocument{}
+        |> LandlordDocument.changeset(attrs)
+        |> Repo.insert()
+        |> case do
+          {:ok, _document} -> :ok
+          {:error, changeset} -> Repo.rollback(changeset)
+        end
+      end)
+
+      landlord
+    end)
+  end
+
+  # Formats form data into a list of landlord document attributes for insertion.
+  defp landlord_document_attrs(form_data, landlord, verification_request, invite) do
+    [
+      {"id_front", "id_front_url"},
+      {"id_back", "id_back_url"},
+      {"kra_doc", "kra_doc_url"},
+      {"ownership_doc", "ownership_doc_url"}
+    ]
+    |> Enum.flat_map(fn {document_type, url_key} ->
+      case Map.get(form_data, url_key) do
+        url when is_binary(url) and url != "" ->
+          metadata = Map.get(form_data, "#{document_type}_meta", %{})
+
+          [
+            %{
+              "document_type" => document_type,
+              "file_url" => url,
+              "original_filename" => metadata["original_filename"],
+              "content_type" => metadata["content_type"],
+              "landlord_id" => landlord.id,
+              "verification_request_id" => verification_request && verification_request.id,
+              "invite_id" => invite.id
+            }
+          ]
+
+        _ ->
+          []
+      end
+    end)
   end
 end

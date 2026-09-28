@@ -2,7 +2,7 @@ defmodule HomeWeb.GoogleAuthController do
   use HomeWeb, :controller
 
   alias Assent.Strategy.Google
- alias HomeWeb.UserAuth
+  alias HomeWeb.UserAuth
   alias Home.Accounts
 
   def request(conn, _params) do
@@ -26,37 +26,38 @@ defmodule HomeWeb.GoogleAuthController do
         |> redirect(to: ~p"/profile")
     end
   end
+
   def callback(conn, params) do
-  session_params = get_session(conn, :google_session_params)
+    session_params = get_session(conn, :google_session_params)
 
-  config =
-    [
-      client_id: Application.fetch_env!(:home, :google_oauth)[:client_id],
-      client_secret: Application.fetch_env!(:home, :google_oauth)[:client_secret],
-      redirect_uri: url(~p"/auth/google/callback")
-    ]
-    |> Keyword.put(:session_params, session_params)
+    config =
+      [
+        client_id: Application.fetch_env!(:home, :google_oauth)[:client_id],
+        client_secret: Application.fetch_env!(:home, :google_oauth)[:client_secret],
+        redirect_uri: url(~p"/auth/google/callback")
+      ]
+      |> Keyword.put(:session_params, session_params)
 
-  case Google.callback(config, params) do
-    {:ok, %{user: google_user}} ->
-  case Accounts.find_or_create_google_user(google_user) do
-    {:ok, user} ->
-      conn
-      |> put_flash(:info, "Successfully signed in with Google!")
-      |> UserAuth.log_in_user(user, %{})
+    case Google.callback(config, params) do
+      {:ok, %{user: google_user}} ->
+        case Accounts.find_or_create_google_user(google_user) do
+          {:ok, user} ->
+            conn
+            |> put_flash(:info, "Successfully signed in with Google!")
+            |> UserAuth.log_in_user(user, %{})
 
-    user ->
-      conn
-      |> put_flash(:info, "Successfully signed in with Google!")
-      |> UserAuth.log_in_user(user, %{})
+          user ->
+            conn
+            |> put_flash(:info, "Successfully signed in with Google!")
+            |> UserAuth.log_in_user(user, %{})
 
-    {:error, reason} ->
-      IO.inspect(reason, label: "GOOGLE USER ERROR")
+          {:error, reason} ->
+            IO.inspect(reason, label: "GOOGLE USER ERROR")
 
-      conn
-      |> put_flash(:error, "Unable to sign in with Google.")
-      |> redirect(to: ~p"/profile")
+            conn
+            |> put_flash(:error, "Unable to sign in with Google.")
+            |> redirect(to: ~p"/profile")
+        end
     end
   end
- end
 end

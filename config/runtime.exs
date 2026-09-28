@@ -60,7 +60,7 @@ if config_env() == :prod do
     secret_key_base: secret_key_base
 end
 
-#google auth
+# google auth
 config :home, :google_oauth,
   client_id: System.get_env("GOOGLE_CLIENT_ID"),
   client_secret: System.get_env("GOOGLE_CLIENT_SECRET")

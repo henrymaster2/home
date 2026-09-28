@@ -16,8 +16,9 @@ defmodule Home.Accounts.Landlord do
     field :kra_pin, :string
     field :id_front_url, :string
     field :id_back_url, :string
+    field :kra_doc_url, :string
 
-    #3 proof of ownership
+    # 3 proof of ownership
     # Step 3: Proof of Ownership & Property Details
     field :listing_purpose, :string, default: "renting"
     field :property_name, :string
@@ -29,6 +30,7 @@ defmodule Home.Accounts.Landlord do
 
     belongs_to :user, Home.Accounts.User
     belongs_to :verification_request, Home.Accounts.VerificationRequest
+    has_many :documents, Home.Accounts.LandlordDocument
 
     timestamps()
   end
@@ -54,16 +56,18 @@ defmodule Home.Accounts.Landlord do
     |> unique_constraint(:email)
   end
 
-  #step 2 identity check
+  # step 2 identity check
   def identity_changeset(landlord, attrs) do
     landlord
-    |> cast(attrs, [:id_type, :id_number, :kra_pin, :id_front_url, :id_back_url])
+    |> cast(attrs, [:id_type, :id_number, :kra_pin, :id_front_url, :id_back_url, :kra_doc_url])
     |> validate_required([:id_type, :id_number, :kra_pin])
-    |> validate_format(:kra_pin, ~r/^[A-Z]\d{9}[A-Z]$/i, message: "must be a valid KRA PIN format (e.g., A012345678X)")
+    |> validate_format(:kra_pin, ~r/^[A-Z]\d{9}[A-Z]$/i,
+      message: "must be a valid KRA PIN format (e.g., A012345678X)"
+    )
   end
 
-  #property changeset
-def property_changeset(landlord, attrs) do
+  # property changeset
+  def property_changeset(landlord, attrs) do
     landlord
     |> cast(attrs, [
       :listing_purpose,
@@ -84,5 +88,4 @@ def property_changeset(landlord, attrs) do
     |> validate_inclusion(:listing_purpose, ["renting", "leasing", "selling", "mixed"])
     |> validate_number(:total_units, greater_than_or_equal_to: 1)
   end
-
 end
