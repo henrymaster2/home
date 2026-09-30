@@ -29,6 +29,7 @@ defmodule HomeWeb.Router do
     post "/users/log_in", UserSessionController, :create
     delete "/users/log_out", UserSessionController, :delete
     live "/house", Ownerdash, :index
+    live "/verify", Verify.Text
     live "/verification", Lite.Register
     get "/auth/google", GoogleAuthController, :request
     get "/auth/google/callback", GoogleAuthController, :callback

@@ -13,38 +13,42 @@ defmodule Home.Cloudinary do
 
   Returns `{:ok, secure_url}` on success or `{:error, reason}` on failure.
   """
-  def upload(local_path) when is_binary(local_path) do
-    with {:ok, cloud_name} <- fetch_env("CLOUDINARY_CLOUD_NAME"),
-         {:ok, api_key} <- fetch_env("CLOUDINARY_API_KEY"),
-         {:ok, api_secret} <- fetch_env("CLOUDINARY_API_SECRET") do
-      timestamp = System.system_time(:second) |> Integer.to_string()
-      signature = sign(%{"timestamp" => timestamp}, api_secret)
+  def upload(local_path, folder \\ "properties") when is_binary(local_path) do
+  with {:ok, cloud_name} <- fetch_env("CLOUDINARY_CLOUD_NAME"),
+       {:ok, api_key} <- fetch_env("CLOUDINARY_API_KEY"),
+       {:ok, api_secret} <- fetch_env("CLOUDINARY_API_SECRET") do
+    timestamp = System.system_time(:second) |> Integer.to_string()
 
-      url = "https://api.cloudinary.com/v1_1/#{cloud_name}/auto/upload"
+    # Include folder in signature calculations
+    params_to_sign = %{"timestamp" => timestamp, "folder" => folder}
+    signature = sign(params_to_sign, api_secret)
 
-      Req.post(url,
-        form_multipart: [
-          api_key: api_key,
-          timestamp: timestamp,
-          signature: signature,
-          file: {File.stream!(local_path, [], 2048), filename: Path.basename(local_path)}
-        ]
-      )
-      |> case do
-        {:ok, %Req.Response{status: 200, body: %{"secure_url" => secure_url}}} ->
-          {:ok, secure_url}
+    url = "https://api.cloudinary.com/v1_1/#{cloud_name}/auto/upload"
 
-        {:ok, %Req.Response{status: 200, body: body}} ->
-          {:error, {:unexpected_response, body}}
+    Req.post(url,
+      form_multipart: [
+        api_key: api_key,
+        timestamp: timestamp,
+        folder: folder,
+        signature: signature,
+        file: {File.stream!(local_path, [], 2048), filename: Path.basename(local_path)}
+      ]
+    )
+    |> case do
+      {:ok, %Req.Response{status: 200, body: %{"secure_url" => secure_url}}} ->
+        {:ok, secure_url}
 
-        {:ok, %Req.Response{status: status, body: body}} ->
-          {:error, {:http_error, status, body}}
+      {:ok, %Req.Response{status: 200, body: body}} ->
+        {:error, {:unexpected_response, body}}
 
-        {:error, reason} ->
-          {:error, reason}
-      end
+      {:ok, %Req.Response{status: status, body: body}} ->
+        {:error, {:http_error, status, body}}
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
+end
 
   defp fetch_env(key) do
     case System.get_env(key) do

@@ -66,6 +66,49 @@ defmodule HomeWeb.UserLive.RegistrationTest do
     end
   end
 
+  describe "landlord verification draft" do
+    test "shows a previously saved ownership document on step 3", %{conn: conn} do
+      admin = user_fixture(%{email: unique_user_email(), role: "admin", names: "System Admin"})
+
+      invite =
+        Accounts.create_invite(%{
+          email: unique_user_email(),
+          token: Ecto.UUID.generate(),
+          invite_type: "landlord",
+          expires_at: DateTime.utc_now() |> DateTime.add(7, :day),
+          created_by_id: admin.id
+        })
+        |> elem(1)
+
+      verification_request =
+        Accounts.create_verification_request(%{
+          names: "Jane Landlord",
+          email: invite.email,
+          phone: "0712345678"
+        })
+        |> elem(1)
+
+      {:ok, _request} =
+        Accounts.save_verification_draft(
+          verification_request,
+          %{},
+          %{
+            "names" => "Jane Landlord",
+            "email" => invite.email,
+            "phone" => "0712345678",
+            "ownership_doc_url" => "https://example.com/uploads/ownership.pdf"
+          },
+          3
+        )
+
+      {:ok, _lv, html} = live(conn, ~p"/verification?token=#{invite.token}")
+
+      assert html =~ "Proof of ownership & property details"
+      assert html =~ "https://example.com/uploads/ownership.pdf"
+      assert html =~ "View"
+    end
+  end
+
   describe "registration navigation" do
     test "redirects to login page when the Log in button is clicked", %{conn: conn} do
       {:ok, lv, _html} = live(conn, ~p"/users/register")
