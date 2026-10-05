@@ -4,7 +4,7 @@ defmodule Home.AccountsTest do
   alias Home.Accounts
 
   import Home.AccountsFixtures
-  alias Home.Accounts.{AdminLiteInvite, User, UserToken}
+  alias Home.Accounts.{AdminLiteInvite, Landlord, LandlordDocument, User, UserToken}
 
   describe "get_user_by_email/1" do
     test "does not return the user if the email does not exist" do
@@ -84,6 +84,70 @@ defmodule Home.AccountsTest do
       assert is_nil(user.hashed_password)
       assert is_nil(user.confirmed_at)
       assert is_nil(user.password)
+    end
+  end
+
+  describe "complete_landlord_registration/2" do
+    test "updates existing landlord documents instead of inserting duplicates" do
+      admin = user_fixture(%{email: unique_user_email(), role: "admin", names: "System Admin"})
+      email = unique_user_email()
+
+      {:ok, invite} =
+        Accounts.create_invite(%{
+          email: email,
+          token: Ecto.UUID.generate(),
+          invite_type: "landlord",
+          expires_at: DateTime.utc_now() |> DateTime.add(7, :day),
+          created_by_id: admin.id
+        })
+
+      {:ok, _request} =
+        Accounts.create_verification_request(%{
+          names: "Jane Landlord",
+          email: email,
+          phone: "0712345678"
+        })
+
+      form_data = %{
+        "entity_type" => "individual",
+        "names" => "Jane Landlord",
+        "email" => email,
+        "phone" => "0712345678",
+        "id_type" => "National ID",
+        "id_number" => "12345678",
+        "kra_pin" => "A123456789Z",
+        "id_front_url" => "https://res.cloudinary.com/demo/front.jpg",
+        "id_back_url" => "https://res.cloudinary.com/demo/back.jpg",
+        "kra_doc_url" => "https://res.cloudinary.com/demo/kra.pdf",
+        "listing_purpose" => "renting",
+        "property_name" => "Sunrise Flats",
+        "ownership_type" => "Freehold title",
+        "lr_number" => "LR 123",
+        "property_location" => "Kisii",
+        "total_units" => "4",
+        "ownership_doc_url" => "https://res.cloudinary.com/demo/ownership.pdf"
+      }
+
+      assert {:ok, %Landlord{} = landlord} =
+               Accounts.complete_landlord_registration(invite, form_data)
+
+      updated_form_data =
+        Map.put(form_data, "id_front_url", "https://res.cloudinary.com/demo/front-updated.jpg")
+
+      assert {:ok, %Landlord{} = updated_landlord} =
+               Accounts.complete_landlord_registration(invite, updated_form_data)
+
+      assert updated_landlord.id == landlord.id
+
+      documents =
+        LandlordDocument
+        |> Repo.all()
+        |> Enum.filter(&(&1.landlord_id == landlord.id))
+
+      assert length(documents) == 4
+
+      assert Repo.get_by!(LandlordDocument, landlord_id: landlord.id, document_type: "id_front").file_url ==
+               "https://res.cloudinary.com/demo/front-updated.jpg"
     end
   end
 

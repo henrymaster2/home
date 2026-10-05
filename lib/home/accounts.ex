@@ -605,7 +605,9 @@ defmodule Home.Accounts do
     now = DateTime.utc_now()
 
     from(i in AdminLiteInvite,
-      where: i.email == ^clean_email and i.invite_type == "landlord" and i.expires_at > ^now and i.used == false,
+      where:
+        i.email == ^clean_email and i.invite_type == "landlord" and i.expires_at > ^now and
+          i.used == false,
       order_by: [desc: i.inserted_at],
       limit: 1
     )
@@ -660,58 +662,142 @@ defmodule Home.Accounts do
   # ============================================================================
 
   @doc """
+  Gets a landlord by ID with verification documents preloaded.
+  """
+  def get_landlord_with_documents(id) do
+    Landlord
+    |> Repo.get(id)
+    |> Repo.preload(:documents)
+  end
+
+  @doc """
+  Gets a landlord by email with verification documents preloaded.
+  """
+  def get_landlord_by_email(nil), do: nil
+
+  def get_landlord_by_email(email) when is_binary(email) do
+    Landlord
+    |> Repo.get_by(email: email)
+    |> Repo.preload(:documents)
+  end
+
+  @doc """
+  Gets the landlord profile attached to a user with verification documents preloaded.
+  """
+  def get_landlord_by_user_id(nil), do: nil
+
+  def get_landlord_by_user_id(user_id) do
+    Landlord
+    |> Repo.get_by(user_id: user_id)
+    |> Repo.preload(:documents)
+  end
+
+  @doc """
   Completes landlord onboarding by creating the User, Landlord, and document rows.
   """
   def complete_landlord_registration(invite, form_data) do
     Repo.transaction(fn ->
-      password = Map.get(form_data, "password") || "DefaultPass123!"
-      password_confirmation = Map.get(form_data, "password_confirmation") || password
-      verification_request = get_verification_request_by_email(invite.email)
+      create_or_update_landlord_registration(invite, form_data)
+    end)
+  end
 
-      user_attrs = %{
-        "names" => form_data["names"],
-        "email" => invite.email,
-        "phone" => form_data["phone"],
-        "password" => password,
-        "password_confirmation" => password_confirmation,
-        "role" => "landlord"
-      }
+  defp create_or_update_landlord_registration(invite, form_data) do
+    password = Map.get(form_data, "password") || "DefaultPass123!"
+    password_confirmation = Map.get(form_data, "password_confirmation") || password
+    verification_request = get_verification_request_by_email(invite.email)
 
-      user =
-        case register_user(user_attrs) do
-          {:ok, user} -> user
-          {:error, changeset} -> Repo.rollback(changeset)
-        end
+    user_attrs = %{
+      "names" => form_data["names"],
+      "email" => invite.email,
+      "phone" => form_data["phone"],
+      "id_number" => form_data["id_number"],
+      "password" => password,
+      "password_confirmation" => password_confirmation,
+      "role" => "landlord"
+    }
 
-      landlord_attrs =
-        form_data
-        |> Map.put("user_id", user.id)
-        |> Map.put("verification_request_id", verification_request && verification_request.id)
+    user =
+      case get_user_by_email(invite.email) do
+        %User{} = user ->
+          user
+          |> Ecto.Changeset.change(%{
+            role: "landlord",
+            names: user.names || form_data["names"],
+            phone: user.phone || form_data["phone"],
+            id_number: user.id_number || form_data["id_number"]
+          })
+          |> Repo.update()
+          |> case do
+            {:ok, user} -> user
+            {:error, changeset} -> Repo.rollback(changeset)
+          end
 
-      landlord =
-        %Landlord{}
-        |> Landlord.personal_details_changeset(landlord_attrs)
-        |> Landlord.identity_changeset(landlord_attrs)
-        |> Landlord.property_changeset(landlord_attrs)
-        |> Repo.insert()
-        |> case do
-          {:ok, landlord} -> landlord
-          {:error, changeset} -> Repo.rollback(changeset)
-        end
+        nil ->
+          case register_user(user_attrs) do
+            {:ok, user} -> user
+            {:error, changeset} -> Repo.rollback(changeset)
+          end
+      end
 
+    landlord_attrs =
       form_data
-      |> landlord_document_attrs(landlord, verification_request, invite)
-      |> Enum.each(fn attrs ->
-        %LandlordDocument{}
-        |> LandlordDocument.changeset(attrs)
-        |> Repo.insert()
-        |> case do
-          {:ok, _document} -> :ok
-          {:error, changeset} -> Repo.rollback(changeset)
-        end
-      end)
+      |> Map.put("user_id", user.id)
+      |> Map.put("verification_request_id", verification_request && verification_request.id)
 
-      landlord
+    landlord = upsert_landlord(invite.email, landlord_attrs)
+
+    form_data
+    |> landlord_document_attrs(landlord, verification_request, invite)
+    |> Enum.each(fn attrs ->
+      attrs
+      |> upsert_landlord_document()
+      |> case do
+        {:ok, _document} ->
+          :ok
+
+        {:error, changeset} ->
+          Repo.rollback(changeset)
+      end
+    end)
+
+    Repo.preload(landlord, :documents, force: true)
+  end
+
+  defp upsert_landlord(email, attrs) do
+    landlord = Repo.get_by(Landlord, email: email) || %Landlord{}
+
+    landlord
+    |> Landlord.personal_details_changeset(attrs)
+    |> Landlord.identity_changeset(attrs)
+    |> Landlord.property_changeset(attrs)
+    |> then(fn changeset ->
+      if landlord.id do
+        Repo.update(changeset)
+      else
+        Repo.insert(changeset)
+      end
+    end)
+    |> case do
+      {:ok, landlord} -> landlord
+      {:error, changeset} -> Repo.rollback(changeset)
+    end
+  end
+
+  defp upsert_landlord_document(attrs) do
+    document =
+      Repo.get_by(LandlordDocument,
+        landlord_id: attrs["landlord_id"],
+        document_type: attrs["document_type"]
+      ) || %LandlordDocument{}
+
+    document
+    |> LandlordDocument.changeset(attrs)
+    |> then(fn changeset ->
+      if document.id do
+        Repo.update(changeset)
+      else
+        Repo.insert(changeset)
+      end
     end)
   end
 

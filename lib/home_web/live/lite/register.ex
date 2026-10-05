@@ -57,6 +57,7 @@ defmodule HomeWeb.Lite.Register do
 
               role ->
                 verification_request = Accounts.get_verification_request_by_email(invite.email)
+                landlord = Accounts.get_landlord_by_email(invite.email)
                 invite_name = if verification_request, do: verification_request.names, else: ""
                 invite_phone = if verification_request, do: verification_request.phone, else: ""
                 saved_draft = (verification_request && verification_request.draft_data) || %{}
@@ -64,10 +65,11 @@ defmodule HomeWeb.Lite.Register do
 
                 form_data =
                   default_form_data()
+                  |> Map.merge(landlord_form_data(landlord))
                   |> Map.merge(saved_draft)
-                  |> Map.put("names", invite_name)
                   |> Map.put("email", invite.email)
-                  |> Map.put("phone", invite_phone)
+                  |> put_default("names", invite_name)
+                  |> put_default("phone", invite_phone)
                   |> put_default("whatsapp_phone", invite_phone)
                   |> put_default("payout_name", invite_name)
                   |> put_default("billing_phone", invite_phone)
@@ -98,8 +100,263 @@ defmodule HomeWeb.Lite.Register do
 
     {:ok, socket}
   end
+
   @impl true
   def handle_event("save_draft", params, socket) do
+    save_draft_from_params(params, socket)
+  end
+
+  @impl true
+  def handle_event("cancel_upload", %{"ref" => ref, "upload" => upload}, socket) do
+    upload_atom = String.to_existing_atom(upload)
+    {:noreply, cancel_upload(socket, upload_atom, ref)}
+  end
+
+  @impl true
+  def handle_event("toggle_theme", _, socket) do
+    new_theme =
+      if socket.assigns.theme == "dark" do
+        "light"
+      else
+        "dark"
+      end
+
+    {:noreply,
+     socket
+     |> assign(:theme, new_theme)
+     |> push_event("set_global_theme", %{theme: new_theme})}
+  end
+
+  @impl true
+  def handle_event("restore_theme", %{"theme" => theme}, socket)
+      when theme in ["dark", "light"] do
+    {:noreply, assign(socket, :theme, theme)}
+  end
+
+  @impl true
+  def handle_event("update_field", params, socket) do
+    field = params["_target"] |> List.last()
+    value = params[field]
+    updated = Map.put(socket.assigns.form_data, field, value)
+    {:noreply, assign(socket, :form_data, updated)}
+  end
+
+  @impl true
+  # 1. Step 2 -> Step 3: Consume ID uploads into Cloudinary
+  def handle_event("next_step", params, %{assigns: %{step: 2}} = socket) do
+    merged = Map.merge(socket.assigns.form_data, form_values(params))
+
+    id_front_urls = consume_uploaded_entries(socket, :id_front, &upload_verification_doc/2)
+    id_back_urls = consume_uploaded_entries(socket, :id_back, &upload_verification_doc/2)
+    kra_doc_urls = consume_uploaded_entries(socket, :kra_doc, &upload_verification_doc/2)
+
+    updated_form_data =
+      merged
+      |> Map.put("id_front_url", extract_url(id_front_urls) || merged["id_front_url"])
+      |> Map.put("id_back_url", extract_url(id_back_urls) || merged["id_back_url"])
+      |> Map.put("kra_doc_url", extract_url(kra_doc_urls) || merged["kra_doc_url"])
+
+    {:noreply,
+     socket
+     |> assign(:form_data, updated_form_data)
+     |> assign(:step, 3)
+     |> assign(:mobile_steps_open, false)}
+  end
+
+  @impl true
+  # 2. Step 3 -> Step 4: Consume Proof of Ownership upload into Cloudinary
+def handle_event("next_step", params, %{assigns: %{step: 3}} = socket) do
+  merged = Map.merge(socket.assigns.form_data, form_values(params))
+
+  ownership_doc_urls =
+    consume_uploaded_entries(socket, :ownership_doc, &upload_verification_doc/2)
+
+  updated_form_data =
+    merged
+    |> Map.put(
+      "ownership_doc_url",
+      extract_url(ownership_doc_urls) || merged["ownership_doc_url"]
+    )
+
+  # Persist step 3 data and file URL into DB draft
+  if invite = socket.assigns.invite do
+    verification_request = Accounts.get_verification_request_by_email(invite.email)
+    request_attrs = verification_request_attrs(invite, updated_form_data)
+
+    Accounts.save_verification_draft(
+      verification_request,
+      request_attrs,
+      updated_form_data,
+      4
+    )
+  end
+
+  {:noreply,
+   socket
+   |> assign(:form_data, updated_form_data)
+   |> assign(:step, 4)
+   |> assign(:mobile_steps_open, false)}
+end
+
+  @impl true
+  # 3. Fallback: Handles remaining step transitions (Step 1 -> 2, Step 4 -> 5)
+  def handle_event("next_step", params, socket) do
+    merged = Map.merge(socket.assigns.form_data, form_values(params))
+    current_step = socket.assigns.step
+    next_step = min(current_step + 1, 5)
+
+    {:noreply,
+     socket
+     |> assign(:form_data, merged)
+     |> assign(:step, next_step)
+     |> assign(:mobile_steps_open, false)}
+  end
+
+  @impl true
+  def handle_event("go_to_step", %{"step" => step}, socket) do
+    target = String.to_integer(step)
+    {:noreply, assign(socket, step: target, mobile_steps_open: false)}
+  end
+
+  def handle_event("prev_step", _params, %{assigns: %{step: step}} = socket) when step > 1 do
+    {:noreply, assign(socket, :step, step - 1)}
+  end
+
+  @impl true
+  def handle_event("open_steps", _params, socket) do
+    {:noreply, assign(socket, :mobile_steps_open, true)}
+  end
+
+  @impl true
+  def handle_event("close_steps", _params, socket) do
+    {:noreply, assign(socket, :mobile_steps_open, false)}
+  end
+
+  @impl true
+  def handle_event("register", %{"_action" => "save_draft"} = params, socket) do
+    save_draft_from_params(params, socket)
+  end
+
+  def handle_event("register", %{"_action" => "next_step"} = params, socket) do
+    handle_event("next_step", params, socket)
+  end
+
+  def handle_event("register", params, socket) do
+    invite = socket.assigns.invite
+    role = socket.assigns.role
+
+    case role do
+      "admin_lite" ->
+        register_admin_lite(params, invite, socket)
+
+      "landlord" ->
+        register_landlord(params, invite, socket)
+
+      _ ->
+        {:noreply, put_flash(socket, :error, "Invalid registration role.")}
+    end
+  end
+
+  @impl true
+  def handle_event("submit_verification_request", params, socket) do
+    request_attrs = %{
+      "names" => params["names"],
+      "email" => params["email"],
+      "phone" => params["phone"]
+    }
+
+    case Accounts.create_verification_request(request_attrs) do
+      {:ok, _request} ->
+        {:noreply,
+         assign(socket,
+           request_submitted: true,
+           submitted_details: request_attrs,
+           request_error: nil
+         )}
+
+      {:error, _changeset} ->
+        {:noreply,
+         assign(socket,
+           request_error: "Could not submit request. Please check your details or try again."
+         )}
+    end
+  end
+
+  defp register_admin_lite(params, invite, socket) do
+    form = Map.merge(socket.assigns.form_data, params)
+
+    attrs = %{
+      "names" => form["names"],
+      "email" => invite.email,
+      "phone" => form["phone"],
+      "id_number" => form["id_number"],
+      "password" => registration_password("admin_lite", form),
+      "password_confirmation" => registration_password_confirmation("admin_lite", form),
+      "role" => "admin_lite"
+    }
+
+    case Accounts.register_user(attrs) do
+      {:ok, _user} ->
+        Accounts.mark_invite_as_used(invite)
+
+        {:noreply,
+         socket
+         |> put_flash(:info, "Account created and verified successfully!")
+         |> redirect(to: role_dashboard_path("admin_lite"))}
+
+      {:error, changeset} ->
+        {:noreply,
+         socket
+         |> assign(:form_data, Map.drop(form, ["password", "password_confirmation"]))
+         |> assign(:registration_error, changeset_error_messages(changeset))}
+    end
+  end
+
+defp register_landlord(params, invite, socket) do
+  {uploaded_urls, upload_errors} = consume_all_uploads(socket)
+
+  form_data =
+    socket.assigns.form_data
+    |> Map.merge(form_values(params))
+    |> Map.merge(uploaded_urls)
+
+  if upload_errors == [] do
+    case Accounts.complete_landlord_registration(invite, form_data) do
+      {:ok, landlord} ->
+        Accounts.mark_invite_as_used(invite)
+
+        {:noreply,
+         socket
+         |> put_flash(:info, "Landlord registration submitted successfully!")
+         |> redirect(to: landlord_process_path(landlord))}
+
+      {:error, changeset_or_reason} ->
+        # 1. Print exact error to terminal for easy debugging
+        IO.inspect(changeset_or_reason, label: "LANDLORD REGISTRATION ERROR")
+
+        error_msg =
+          case changeset_or_reason do
+            %Ecto.Changeset{} = cs -> changeset_error_messages(cs)
+            reason when is_binary(reason) -> reason
+            _ -> "Registration failed. Please check all fields."
+          end
+
+        # 2. Flash error on UI so submission doesn't fail silently
+        {:noreply,
+         socket
+         |> assign(:form_data, Map.drop(form_data, ["password", "password_confirmation"]))
+         |> assign(:registration_error, error_msg)
+         |> put_flash(:error, error_msg)}
+    end
+  else
+    {:noreply,
+     socket
+     |> assign(:form_data, Map.drop(form_data, ["password", "password_confirmation"]))
+     |> put_flash(:error, upload_error_message(upload_errors))}
+  end
+end
+
+  defp save_draft_from_params(params, socket) do
     case socket.assigns.invite do
       nil ->
         {:noreply,
@@ -111,7 +368,7 @@ defmodule HomeWeb.Lite.Register do
 
         form_data =
           socket.assigns.form_data
-          |> Map.merge(Map.drop(params, ["_target"]))
+          |> Map.merge(form_values(params))
           |> Map.merge(uploaded_urls)
 
         verification_request = Accounts.get_verification_request_by_email(invite.email)
@@ -164,7 +421,17 @@ defmodule HomeWeb.Lite.Register do
     end)
   end
 
+  defp upload_in_progress?(uploads) do
+  Enum.any?([:id_front, :id_back, :kra_doc, :ownership_doc], fn upload_key ->
+    Enum.any?(uploads[upload_key].entries, fn entry -> !entry.done? end)
+  end)
+  end
+
   defp consume_document_upload(socket, upload_name, url_key) do
+
+    upload_config = socket.assigns.uploads[upload_name]
+    has_pending_entry? = upload_config.entries != []
+
     entries =
       consume_uploaded_entries(socket, upload_name, fn %{path: path}, entry ->
         case Home.Cloudinary.upload(path) do
@@ -182,6 +449,28 @@ defmodule HomeWeb.Lite.Register do
             {:ok, %{"error" => reason}}
         end
       end)
+      case List.first(entries) do
+        %{"error" => reason} ->
+          {%{}, [{upload_name, reason}]}
+
+          %{"url" => url, "meta" => metadata} ->
+            {%{url_key => url, "#{upload_name}_meta" => metadata}, []}
+
+            nil ->
+              existing_url = socket.assigns.form_data[url_key]
+              existing_metadata = socket.assigns.form_data["#{upload_name}_meta"]
+
+              cond do
+                has_pending_entry? ->
+                  {%{}, [{upload_name, "Upload in progress. Please wait until the upload is complete before saving."}]}
+
+                  existing_url not in [nil, ""] ->
+                    {%{url_key => existing_url, "#{upload_name}_meta" => existing_metadata || %{}}, []}
+
+                    true ->
+                      {%{}, []}
+              end
+      end
 
     case List.first(entries) do
       %{"error" => reason} ->
@@ -217,261 +506,20 @@ defmodule HomeWeb.Lite.Register do
   defp upload_label(:ownership_doc), do: "ownership document"
   defp upload_label(other), do: to_string(other)
 
-  defp image_entry?(entry), do: String.starts_with?(entry.client_type || "", "image/")
-
-  defp image_url?(url) when is_binary(url) do
-    url
-    |> URI.parse()
-    |> Map.get(:path)
-    |> to_string()
-    |> String.downcase()
-    |> String.match?(~r/\.(jpe?g|png|gif|webp)$/)
+  defp form_values(params) do
+    Map.drop(params, ["_target", "_action", "value"])
   end
 
-  defp image_url?(_url), do: false
+  defp extract_url([url | _]) when is_binary(url), do: url
+  defp extract_url(_), do: nil
 
-  defp document_present?(form_data, url_key), do: form_data[url_key] not in [nil, ""]
-
-  defp document_status(form_data, url_key, entries, label) do
-    cond do
-      entries != [] -> "#{label} attached"
-      document_present?(form_data, url_key) -> "#{label} saved"
-      true -> "#{label} missing"
-    end
-  end
-
-  @impl true
-  def handle_event("cancel_upload", %{"ref" => ref, "upload" => upload}, socket) do
-    upload_atom = String.to_existing_atom(upload)
-    {:noreply, cancel_upload(socket, upload_atom, ref)}
-  end
-
-  @impl true
-  def handle_event("toggle_theme", _, socket) do
-    new_theme =
-      if socket.assigns.theme == "dark" do
-        "light"
-      else
-        "dark"
-      end
-
-    {:noreply,
-     socket
-     |> assign(:theme, new_theme)
-     |> push_event("set_global_theme", %{theme: new_theme})}
-  end
-
-  @impl true
-  def handle_event("restore_theme", %{"theme" => theme}, socket)
-      when theme in ["dark", "light"] do
-    {:noreply, assign(socket, :theme, theme)}
-  end
-
-  @impl true
-  def handle_event("update_field", params, socket) do
-    field = params["_target"] |> List.last()
-    value = params[field]
-    updated = Map.put(socket.assigns.form_data, field, value)
-    {:noreply, assign(socket, :form_data, updated)}
-  end
-
-  @impl true
-  # 1. Step 2 -> Step 3: Consume ID uploads into Cloudinary
-def handle_event("next_step", params, %{assigns: %{step: 2}} = socket) do
-  merged = Map.merge(socket.assigns.form_data, Map.get(params, "form_data", %{}))
-
-  id_front_urls = consume_uploaded_entries(socket, :id_front, &upload_verification_doc/2)
-  id_back_urls = consume_uploaded_entries(socket, :id_back, &upload_verification_doc/2)
-  kra_doc_urls = consume_uploaded_entries(socket, :kra_doc, &upload_verification_doc/2)
-
-  updated_form_data =
-    merged
-    |> Map.put("id_front_url", extract_url(id_front_urls) || merged["id_front_url"])
-    |> Map.put("id_back_url", extract_url(id_back_urls) || merged["id_back_url"])
-    |> Map.put("kra_doc_url", extract_url(kra_doc_urls) || merged["kra_doc_url"])
-
-  {:noreply,
-   socket
-   |> assign(:form_data, updated_form_data)
-   |> assign(:step, 3)
-   |> assign(:mobile_steps_open, false)}
-end
-
-# Private helper to ensure only binary URLs are returned
-defp extract_url([url | _]) when is_binary(url), do: url
-defp extract_url(_), do: nil
-
-@impl true
-# 2. Step 3 -> Step 4: Consume Proof of Ownership upload into Cloudinary
-def handle_event("next_step", params, %{assigns: %{step: 3}} = socket) do
-  merged = Map.merge(socket.assigns.form_data, Map.get(params, "form_data", %{}))
-
-  ownership_doc_urls = consume_uploaded_entries(socket, :ownership_doc, &upload_verification_doc/2)
-
-  updated_form_data =
-    merged
-    |> Map.put("ownership_doc_url", List.first(ownership_doc_urls) || merged["ownership_doc_url"])
-
-  {:noreply,
-   socket
-   |> assign(:form_data, updated_form_data)
-   |> assign(:step, 4)
-   |> assign(:mobile_steps_open, false)}
-end
-
-@impl true
-# 3. Fallback: Handles remaining step transitions (Step 1 -> 2, Step 4 -> 5)
-def handle_event("next_step", params, socket) do
-  merged = Map.merge(socket.assigns.form_data, Map.get(params, "form_data", %{}))
-  current_step = socket.assigns.step
-  next_step = min(current_step + 1, 5)
-
-  {:noreply,
-   socket
-   |> assign(:form_data, merged)
-   |> assign(:step, next_step)
-   |> assign(:mobile_steps_open, false)}
-end
-
-  @impl true
   defp upload_verification_doc(%{path: path}, _entry) do
-  # Calls your Cloudinary module, passing the verification folder
-  Home.Cloudinary.upload(path, "verifications/landlord_docs")
-end
+    case Home.Cloudinary.upload(path, "verifications/landlord_docs") do
+      {:ok, url} ->
+        {:ok, url}
 
-@impl true
- defp upload_verification_doc(%{path: path}, _entry) do
-  case Home.Cloudinary.upload(path, "verifications/landlord_docs") do
-    {:ok, url} ->
-      {:ok, url}
-
-    {:error, reason} ->
-      # Log or handle the failure gracefully
-      {:postpone, reason} # or handle error response
-  end
-end
-  @impl true
-  def handle_event("go_to_step", %{"step" => step}, socket) do
-    target = String.to_integer(step)
-    {:noreply, assign(socket, step: target, mobile_steps_open: false)}
-  end
-
-
-def handle_event("prev_step", _params, %{assigns: %{step: step}} = socket) when step > 1 do
-  {:noreply, assign(socket, :step, step - 1)}
-end
-
-  @impl true
-  def handle_event("open_steps", _params, socket) do
-    {:noreply, assign(socket, :mobile_steps_open, true)}
-  end
-
-  @impl true
-  def handle_event("close_steps", _params, socket) do
-    {:noreply, assign(socket, :mobile_steps_open, false)}
-  end
-
-  @impl true
-  def handle_event("register", params, socket) do
-    invite = socket.assigns.invite
-    role = socket.assigns.role
-
-    case role do
-      "admin_lite" ->
-        register_admin_lite(params, invite, socket)
-
-      "landlord" ->
-        register_landlord(params, invite, socket)
-
-      _ ->
-        {:noreply, put_flash(socket, :error, "Invalid registration role.")}
-    end
-  end
-
-  defp register_admin_lite(params, invite, socket) do
-    form = Map.merge(socket.assigns.form_data, params)
-
-    attrs = %{
-      "names" => form["names"],
-      "email" => invite.email,
-      "phone" => form["phone"],
-      "id_number" => form["id_number"],
-      "password" => registration_password("admin_lite", form),
-      "password_confirmation" => registration_password_confirmation("admin_lite", form),
-      "role" => "admin_lite"
-    }
-
-    case Accounts.register_user(attrs) do
-      {:ok, _user} ->
-        Accounts.mark_invite_as_used(invite)
-
-        {:noreply,
-         socket
-         |> put_flash(:info, "Account created and verified successfully!")
-         |> redirect(to: role_dashboard_path("admin_lite"))}
-
-      {:error, changeset} ->
-        {:noreply,
-         socket
-         |> assign(:form_data, Map.drop(form, ["password", "password_confirmation"]))
-         |> assign(:registration_error, changeset_error_messages(changeset))}
-    end
-  end
-
-  defp register_landlord(params, invite, socket) do
-    {uploaded_urls, upload_errors} = consume_all_uploads(socket)
-
-    form_data =
-      socket.assigns.form_data
-      |> Map.merge(Map.drop(params, ["_target"]))
-      |> Map.merge(uploaded_urls)
-
-    if upload_errors == [] do
-      case Accounts.complete_landlord_registration(invite, form_data) do
-        {:ok, _landlord} ->
-          Accounts.mark_invite_as_used(invite)
-
-          {:noreply,
-           socket
-           |> put_flash(:info, "Landlord registration submitted successfully!")
-           |> redirect(to: role_dashboard_path("landlord"))}
-
-        {:error, changeset} ->
-          {:noreply,
-           socket
-           |> assign(:form_data, Map.drop(form_data, ["password", "password_confirmation"]))
-           |> assign(:registration_error, changeset_error_messages(changeset))}
-      end
-    else
-      {:noreply,
-       socket
-       |> assign(:form_data, Map.drop(form_data, ["password", "password_confirmation"]))
-       |> put_flash(:error, upload_error_message(upload_errors))}
-    end
-  end
-
-  @impl true
-  def handle_event("submit_verification_request", params, socket) do
-    request_attrs = %{
-      "names" => params["names"],
-      "email" => params["email"],
-      "phone" => params["phone"]
-    }
-
-    case Accounts.create_verification_request(request_attrs) do
-      {:ok, _request} ->
-        {:noreply,
-         assign(socket,
-           request_submitted: true,
-           submitted_details: request_attrs,
-           request_error: nil
-         )}
-
-      {:error, _changeset} ->
-        {:noreply,
-         assign(socket,
-           request_error: "Could not submit request. Please check your details or try again."
-         )}
+      {:error, reason} ->
+        {:postpone, reason}
     end
   end
 
@@ -480,8 +528,12 @@ end
   defp registration_role(_invite), do: nil
 
   defp role_dashboard_path("admin_lite"), do: ~p"/home"
-  defp role_dashboard_path("landlord"), do: ~p"/house"
   defp role_dashboard_path(_role), do: ~p"/users/log-in"
+
+  defp landlord_process_path(landlord) do
+    token = Phoenix.Token.sign(HomeWeb.Endpoint, "landlord-process", landlord.id)
+    ~p"/process?landlord=#{token}"
+  end
 
   defp default_form_data do
     %{
@@ -513,6 +565,74 @@ end
       "total_units" => "",
       "ownership_doc_url" => ""
     }
+  end
+
+  defp landlord_form_data(nil), do: %{}
+
+  defp landlord_form_data(landlord) do
+    documents = Map.new(landlord.documents || [], &{&1.document_type, &1})
+
+    %{
+      "entity_type" => landlord.entity_type,
+      "names" => landlord.names,
+      "email" => landlord.email,
+      "phone" => landlord.phone,
+      "whatsapp_phone" => landlord.whatsapp_phone,
+      "residence_location" => landlord.residence_location,
+      "id_type" => landlord.id_type,
+      "id_number" => landlord.id_number,
+      "kra_pin" => landlord.kra_pin,
+      "id_front_url" => landlord.id_front_url || document_url(documents, "id_front"),
+      "id_back_url" => landlord.id_back_url || document_url(documents, "id_back"),
+      "kra_doc_url" => landlord.kra_doc_url || document_url(documents, "kra_doc"),
+      "listing_purpose" => landlord.listing_purpose,
+      "property_name" => landlord.property_name,
+      "property_location" => landlord.property_location,
+      "ownership_type" => landlord.ownership_type,
+      "lr_number" => landlord.lr_number,
+      "total_units" => total_units_value(landlord.total_units),
+      "ownership_doc_url" =>
+        landlord.ownership_doc_url || document_url(documents, "ownership_doc"),
+      "id_front_meta" => document_metadata(documents, "id_front"),
+      "id_back_meta" => document_metadata(documents, "id_back"),
+      "kra_doc_meta" => document_metadata(documents, "kra_doc"),
+      "ownership_doc_meta" => document_metadata(documents, "ownership_doc")
+    }
+    |> Enum.reject(fn {_key, value} -> value in [nil, ""] or value == %{} end)
+    |> Map.new()
+  end
+
+  defp document_url(documents, type) do
+    documents
+    |> Map.get(type)
+    |> case do
+      nil -> nil
+      document -> document.file_url
+    end
+  end
+
+  defp document_metadata(documents, type) do
+    documents
+    |> Map.get(type)
+    |> case do
+      nil ->
+        %{}
+
+      document ->
+        %{
+          "original_filename" => document.original_filename,
+          "content_type" => document.content_type
+        }
+        |> Enum.reject(fn {_key, value} -> value in [nil, ""] end)
+        |> Map.new()
+    end
+  end
+
+  defp total_units_value(nil), do: nil
+  defp total_units_value(value), do: to_string(value)
+
+  defp document_attached?(uploads, form_data, upload_name, url_key) do
+    not Enum.empty?(uploads[upload_name].entries) or form_data[url_key] not in [nil, ""]
   end
 
   defp verification_request_attrs(invite, form_data) do
@@ -1286,336 +1406,336 @@ end
 
     <!-- STEP 2 -->
 
-                   <section class={if @step == 2, do: "block", else: "hidden"}>
-  <h2 class="font-serif-display text-lg ink mb-1">Identity verification</h2>
-  <p class="ink-dim text-sm mb-5">
-    <%= if @form_data["entity_type"] == "company" do %>
-      Upload legal business registration details and tax documentation.
-    <% else %>
-      Provide your legal identity documents and tax PIN.
-    <% end %>
-  </p>
-  <div class="grid sm:grid-cols-2 gap-4">
-    <!-- ID Type -->
-    <div>
-      <label class="block text-xs font-semibold ink-dim mb-1.5">
-        {if @form_data["entity_type"] == "company",
-          do: "Document type",
-          else: "ID type"}
-      </label>
-      <select
-        name="id_type"
-        class="field-input w-full rounded-lg px-4 py-2.5 text-sm"
-      >
-        <%= if @form_data["entity_type"] == "company" do %>
-          <option selected={
-            @form_data["id_type"] == "Certificate of Incorporation"
-          }>
-            Certificate of Incorporation
-          </option>
-          <option selected={@form_data["id_type"] == "Business Registration"}>
-            Business Registration
-          </option>
-        <% else %>
-          <option selected={@form_data["id_type"] == "National ID"}>
-            National ID
-          </option>
-          <option selected={@form_data["id_type"] == "Passport"}>
-            Passport
-          </option>
-          <option selected={@form_data["id_type"] == "Alien ID"}>
-            Alien ID
-          </option>
-        <% end %>
-      </select>
-    </div>
+                        <section class={if @step == 2, do: "block", else: "hidden"}>
+                          <h2 class="font-serif-display text-lg ink mb-1">Identity verification</h2>
+                          <p class="ink-dim text-sm mb-5">
+                            <%= if @form_data["entity_type"] == "company" do %>
+                              Upload legal business registration details and tax documentation.
+                            <% else %>
+                              Provide your legal identity documents and tax PIN.
+                            <% end %>
+                          </p>
+                          <div class="grid sm:grid-cols-2 gap-4">
+                            <!-- ID Type -->
+                            <div>
+                              <label class="block text-xs font-semibold ink-dim mb-1.5">
+                                {if @form_data["entity_type"] == "company",
+                                  do: "Document type",
+                                  else: "ID type"}
+                              </label>
+                              <select
+                                name="id_type"
+                                class="field-input w-full rounded-lg px-4 py-2.5 text-sm"
+                              >
+                                <%= if @form_data["entity_type"] == "company" do %>
+                                  <option selected={
+                                    @form_data["id_type"] == "Certificate of Incorporation"
+                                  }>
+                                    Certificate of Incorporation
+                                  </option>
+                                  <option selected={@form_data["id_type"] == "Business Registration"}>
+                                    Business Registration
+                                  </option>
+                                <% else %>
+                                  <option selected={@form_data["id_type"] == "National ID"}>
+                                    National ID
+                                  </option>
+                                  <option selected={@form_data["id_type"] == "Passport"}>
+                                    Passport
+                                  </option>
+                                  <option selected={@form_data["id_type"] == "Alien ID"}>
+                                    Alien ID
+                                  </option>
+                                <% end %>
+                              </select>
+                            </div>
 
     <!-- ID Number -->
-    <div>
-      <label class="block text-xs font-semibold ink-dim mb-1.5">
-        {if @form_data["entity_type"] == "company",
-          do: "Registration / CPR number",
-          else: "ID / Passport number"}
-      </label>
-      <input
-        type="text"
-        name="id_number"
-        value={@form_data["id_number"]}
-        placeholder={
-          if @form_data["entity_type"] == "company",
-            do: "e.g. PVT-AB1234",
-            else: "e.g. 32011245"
-        }
-        class="field-input w-full rounded-lg px-4 py-2.5 text-sm"
-      />
-    </div>
+                            <div>
+                              <label class="block text-xs font-semibold ink-dim mb-1.5">
+                                {if @form_data["entity_type"] == "company",
+                                  do: "Registration / CPR number",
+                                  else: "ID / Passport number"}
+                              </label>
+                              <input
+                                type="text"
+                                name="id_number"
+                                value={@form_data["id_number"]}
+                                placeholder={
+                                  if @form_data["entity_type"] == "company",
+                                    do: "e.g. PVT-AB1234",
+                                    else: "e.g. 32011245"
+                                }
+                                class="field-input w-full rounded-lg px-4 py-2.5 text-sm"
+                              />
+                            </div>
 
     <!-- KRA PIN -->
-    <div class="sm:col-span-2">
-      <label class="block text-xs font-semibold ink-dim mb-1.5">
-        KRA PIN number
-      </label>
-      <input
-        type="text"
-        name="kra_pin"
-        value={@form_data["kra_pin"]}
-        placeholder="e.g. A012345678X"
-        class="field-input w-full uppercase rounded-lg px-4 py-2.5 text-sm"
-      />
-    </div>
+                            <div class="sm:col-span-2">
+                              <label class="block text-xs font-semibold ink-dim mb-1.5">
+                                KRA PIN number
+                              </label>
+                              <input
+                                type="text"
+                                name="kra_pin"
+                                value={@form_data["kra_pin"]}
+                                placeholder="e.g. A012345678X"
+                                class="field-input w-full uppercase rounded-lg px-4 py-2.5 text-sm"
+                              />
+                            </div>
 
     <!-- Front Upload -->
-    <div>
-      <label class="block text-xs font-semibold ink-dim mb-1.5">
-        {if @form_data["entity_type"] == "company",
-          do: "Registration certificate",
-          else: "ID — front"}
-      </label>
-      <div class="file-drop rounded-lg p-3.5 relative hover:border-accent transition">
-        <.live_file_input
-          upload={@uploads.id_front}
-          class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-        />
+                            <div>
+                              <label class="block text-xs font-semibold ink-dim mb-1.5">
+                                {if @form_data["entity_type"] == "company",
+                                  do: "Registration certificate",
+                                  else: "ID — front"}
+                              </label>
+                              <div class="file-drop rounded-lg p-3.5 relative hover:border-accent transition">
+                                <.live_file_input
+                                  upload={@uploads.id_front}
+                                  class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                                />
 
-        <%= if not Enum.empty?(@uploads.id_front.entries) do %>
-          <%= for entry <- @uploads.id_front.entries do %>
-            <div class="flex items-center justify-between gap-2 z-20 relative">
-              <span class="text-xs font-medium ink truncate">
-                {entry.client_name}
-              </span>
-              <button
-                type="button"
-                phx-click="cancel_upload"
-                phx-value-ref={entry.ref}
-                phx-value-upload="id_front"
-                class="text-xs text-danger font-semibold hover:underline"
-              >
-                Remove
-              </button>
-            </div>
-          <% end %>
-        <% else %>
-          <%= if @form_data["id_front_url"] && @form_data["id_front_url"] != "" do %>
-            <div class="flex items-center justify-between gap-2 z-20 relative">
-              <div class="flex items-center gap-2 min-w-0 pointer-events-none">
-                <svg
-                  width="18"
-                  height="18"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  class="text-accent shrink-0"
-                  stroke-width="2"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                >
-                  <path d="M20 6 9 17l-5-5" />
-                </svg>
-                <span class="text-xs font-medium ink truncate">
-                  Document attached
-                </span>
-              </div>
-              <a
-                href={@form_data["id_front_url"]}
-                target="_blank"
-                rel="noopener noreferrer"
-                class="text-xs text-accent font-semibold hover:underline pointer-events-auto"
-              >
-                View
-              </a>
-            </div>
-          <% else %>
-            <div class="flex items-center gap-3 pointer-events-none">
-              <svg
-                width="18"
-                height="18"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                class="text-accent shrink-0"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              >
-                <path d="M12 16V4M12 4 7 9M12 4l5 5" />
-                <path d="M20 16v3a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-3" />
-              </svg>
-              <span class="min-w-0 break-words text-xs ink-dim">
-                Upload photo or scan
-              </span>
-            </div>
-          <% end %>
-        <% end %>
-      </div>
-    </div>
+                                <%= if not Enum.empty?(@uploads.id_front.entries) do %>
+                                  <%= for entry <- @uploads.id_front.entries do %>
+                                    <div class="flex items-center justify-between gap-2 z-20 relative">
+                                      <span class="text-xs font-medium ink truncate">
+                                        {entry.client_name}
+                                      </span>
+                                      <button
+                                        type="button"
+                                        phx-click="cancel_upload"
+                                        phx-value-ref={entry.ref}
+                                        phx-value-upload="id_front"
+                                        class="text-xs text-danger font-semibold hover:underline"
+                                      >
+                                        Remove
+                                      </button>
+                                    </div>
+                                  <% end %>
+                                <% else %>
+                                  <%= if @form_data["id_front_url"] && @form_data["id_front_url"] != "" do %>
+                                    <div class="flex items-center justify-between gap-2 z-20 relative">
+                                      <div class="flex items-center gap-2 min-w-0 pointer-events-none">
+                                        <svg
+                                          width="18"
+                                          height="18"
+                                          viewBox="0 0 24 24"
+                                          fill="none"
+                                          stroke="currentColor"
+                                          class="text-accent shrink-0"
+                                          stroke-width="2"
+                                          stroke-linecap="round"
+                                          stroke-linejoin="round"
+                                        >
+                                          <path d="M20 6 9 17l-5-5" />
+                                        </svg>
+                                        <span class="text-xs font-medium ink truncate">
+                                          Document attached
+                                        </span>
+                                      </div>
+                                      <a
+                                        href={@form_data["id_front_url"]}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        class="text-xs text-accent font-semibold hover:underline pointer-events-auto"
+                                      >
+                                        View
+                                      </a>
+                                    </div>
+                                  <% else %>
+                                    <div class="flex items-center gap-3 pointer-events-none">
+                                      <svg
+                                        width="18"
+                                        height="18"
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        class="text-accent shrink-0"
+                                        stroke-width="2"
+                                        stroke-linecap="round"
+                                        stroke-linejoin="round"
+                                      >
+                                        <path d="M12 16V4M12 4 7 9M12 4l5 5" />
+                                        <path d="M20 16v3a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-3" />
+                                      </svg>
+                                      <span class="min-w-0 break-words text-xs ink-dim">
+                                        Upload photo or scan
+                                      </span>
+                                    </div>
+                                  <% end %>
+                                <% end %>
+                              </div>
+                            </div>
 
     <!-- Back Upload -->
-    <div>
-      <label class="block text-xs font-semibold ink-dim mb-1.5">
-        {if @form_data["entity_type"] == "company",
-          do: "CR12 / Tax cert",
-          else: "ID — back"}
-      </label>
-      <div class="file-drop rounded-lg p-3.5 relative hover:border-accent transition">
-        <.live_file_input
-          upload={@uploads.id_back}
-          class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-        />
+                            <div>
+                              <label class="block text-xs font-semibold ink-dim mb-1.5">
+                                {if @form_data["entity_type"] == "company",
+                                  do: "CR12 / Tax cert",
+                                  else: "ID — back"}
+                              </label>
+                              <div class="file-drop rounded-lg p-3.5 relative hover:border-accent transition">
+                                <.live_file_input
+                                  upload={@uploads.id_back}
+                                  class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                                />
 
-        <%= cond do %>
-          <% not Enum.empty?(@uploads.id_back.entries) -> %>
-            <%= for entry <- @uploads.id_back.entries do %>
-              <div class="flex items-center justify-between gap-2 z-20 relative">
-                <span class="text-xs font-medium ink truncate">
-                  {entry.client_name}
-                </span>
-                <button
-                  type="button"
-                  phx-click="cancel_upload"
-                  phx-value-ref={entry.ref}
-                  phx-value-upload="id_back"
-                  class="text-xs text-danger font-semibold hover:underline"
-                >
-                  Remove
-                </button>
-              </div>
-            <% end %>
-          <% @form_data["id_back_url"] && @form_data["id_back_url"] != "" -> %>
-            <div class="flex items-center justify-between gap-2 z-20 relative">
-              <div class="flex items-center gap-2 min-w-0 pointer-events-none">
-                <svg
-                  width="18"
-                  height="18"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  class="text-accent shrink-0"
-                  stroke-width="2"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                >
-                  <path d="M20 6 9 17l-5-5" />
-                </svg>
-                <span class="text-xs font-medium ink truncate">
-                  Document attached
-                </span>
-              </div>
-              <a
-                href={@form_data["id_back_url"]}
-                target="_blank"
-                rel="noopener noreferrer"
-                class="text-xs text-accent font-semibold hover:underline pointer-events-auto"
-              >
-                View
-              </a>
-            </div>
-          <% true -> %>
-            <div class="flex items-center gap-3">
-              <svg
-                width="18"
-                height="18"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                class="text-accent shrink-0"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              >
-                <path d="M12 16V4M12 4 7 9M12 4l5 5" /><path d="M20 16v3a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-3" />
-              </svg>
-              <span class="min-w-0 break-words text-xs ink-dim">
-                Upload photo or scan
-              </span>
-            </div>
-        <% end %>
-      </div>
-    </div>
+                                <%= cond do %>
+                                  <% not Enum.empty?(@uploads.id_back.entries) -> %>
+                                    <%= for entry <- @uploads.id_back.entries do %>
+                                      <div class="flex items-center justify-between gap-2 z-20 relative">
+                                        <span class="text-xs font-medium ink truncate">
+                                          {entry.client_name}
+                                        </span>
+                                        <button
+                                          type="button"
+                                          phx-click="cancel_upload"
+                                          phx-value-ref={entry.ref}
+                                          phx-value-upload="id_back"
+                                          class="text-xs text-danger font-semibold hover:underline"
+                                        >
+                                          Remove
+                                        </button>
+                                      </div>
+                                    <% end %>
+                                  <% @form_data["id_back_url"] && @form_data["id_back_url"] != "" -> %>
+                                    <div class="flex items-center justify-between gap-2 z-20 relative">
+                                      <div class="flex items-center gap-2 min-w-0 pointer-events-none">
+                                        <svg
+                                          width="18"
+                                          height="18"
+                                          viewBox="0 0 24 24"
+                                          fill="none"
+                                          stroke="currentColor"
+                                          class="text-accent shrink-0"
+                                          stroke-width="2"
+                                          stroke-linecap="round"
+                                          stroke-linejoin="round"
+                                        >
+                                          <path d="M20 6 9 17l-5-5" />
+                                        </svg>
+                                        <span class="text-xs font-medium ink truncate">
+                                          Document attached
+                                        </span>
+                                      </div>
+                                      <a
+                                        href={@form_data["id_back_url"]}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        class="text-xs text-accent font-semibold hover:underline pointer-events-auto"
+                                      >
+                                        View
+                                      </a>
+                                    </div>
+                                  <% true -> %>
+                                    <div class="flex items-center gap-3">
+                                      <svg
+                                        width="18"
+                                        height="18"
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        class="text-accent shrink-0"
+                                        stroke-width="2"
+                                        stroke-linecap="round"
+                                        stroke-linejoin="round"
+                                      >
+                                        <path d="M12 16V4M12 4 7 9M12 4l5 5" /><path d="M20 16v3a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-3" />
+                                      </svg>
+                                      <span class="min-w-0 break-words text-xs ink-dim">
+                                        Upload photo or scan
+                                      </span>
+                                    </div>
+                                <% end %>
+                              </div>
+                            </div>
 
     <!-- KRA Certificate Upload (Full Width) -->
-    <div class="sm:col-span-2">
-      <label class="block text-xs font-semibold ink-dim mb-1.5">
-        KRA Certificate / PIN document
-      </label>
-      <div class="file-drop rounded-lg p-3.5 relative hover:border-accent transition">
-        <.live_file_input
-          upload={@uploads.kra_doc}
-          class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-        />
+                            <div class="sm:col-span-2">
+                              <label class="block text-xs font-semibold ink-dim mb-1.5">
+                                KRA Certificate / PIN document
+                              </label>
+                              <div class="file-drop rounded-lg p-3.5 relative hover:border-accent transition">
+                                <.live_file_input
+                                  upload={@uploads.kra_doc}
+                                  class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                                />
 
-        <%= if not Enum.empty?(@uploads.kra_doc.entries) do %>
-          <%= for entry <- @uploads.kra_doc.entries do %>
-            <div class="flex items-center justify-between gap-2 z-20 relative">
-              <span class="text-xs font-medium ink truncate">
-                {entry.client_name}
-              </span>
-              <button
-                type="button"
-                phx-click="cancel_upload"
-                phx-value-ref={entry.ref}
-                phx-value-upload="kra_doc"
-                class="text-xs text-danger font-semibold hover:underline"
-              >
-                Remove
-              </button>
-            </div>
-          <% end %>
-        <% else %>
-          <%= if @form_data["kra_doc_url"] && @form_data["kra_doc_url"] != "" do %>
-            <div class="flex items-center justify-between gap-2 z-20 relative">
-              <div class="flex items-center gap-2 min-w-0 pointer-events-none">
-                <svg
-                  width="18"
-                  height="18"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  class="text-accent shrink-0"
-                  stroke-width="2"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                >
-                  <path d="M20 6 9 17l-5-5" />
-                </svg>
-                <span class="text-xs font-medium ink truncate">
-                  Document attached
-                </span>
-              </div>
-              <a
-                href={@form_data["kra_doc_url"]}
-                target="_blank"
-                rel="noopener noreferrer"
-                class="text-xs text-accent font-semibold hover:underline pointer-events-auto"
-              >
-                View
-              </a>
-            </div>
-          <% else %>
-            <div class="flex items-center gap-3 pointer-events-none">
-              <svg
-                width="18"
-                height="18"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                class="text-accent shrink-0"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              >
-                <path d="M12 16V4M12 4 7 9M12 4l5 5" />
-                <path d="M20 16v3a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-3" />
-              </svg>
-              <span class="min-w-0 break-words text-xs ink-dim">
-                Upload photo or scan of KRA Certificate
-              </span>
-            </div>
-          <% end %>
-        <% end %>
-      </div>
-    </div>
-  </div>
-</section>
+                                <%= if not Enum.empty?(@uploads.kra_doc.entries) do %>
+                                  <%= for entry <- @uploads.kra_doc.entries do %>
+                                    <div class="flex items-center justify-between gap-2 z-20 relative">
+                                      <span class="text-xs font-medium ink truncate">
+                                        {entry.client_name}
+                                      </span>
+                                      <button
+                                        type="button"
+                                        phx-click="cancel_upload"
+                                        phx-value-ref={entry.ref}
+                                        phx-value-upload="kra_doc"
+                                        class="text-xs text-danger font-semibold hover:underline"
+                                      >
+                                        Remove
+                                      </button>
+                                    </div>
+                                  <% end %>
+                                <% else %>
+                                  <%= if @form_data["kra_doc_url"] && @form_data["kra_doc_url"] != "" do %>
+                                    <div class="flex items-center justify-between gap-2 z-20 relative">
+                                      <div class="flex items-center gap-2 min-w-0 pointer-events-none">
+                                        <svg
+                                          width="18"
+                                          height="18"
+                                          viewBox="0 0 24 24"
+                                          fill="none"
+                                          stroke="currentColor"
+                                          class="text-accent shrink-0"
+                                          stroke-width="2"
+                                          stroke-linecap="round"
+                                          stroke-linejoin="round"
+                                        >
+                                          <path d="M20 6 9 17l-5-5" />
+                                        </svg>
+                                        <span class="text-xs font-medium ink truncate">
+                                          Document attached
+                                        </span>
+                                      </div>
+                                      <a
+                                        href={@form_data["kra_doc_url"]}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        class="text-xs text-accent font-semibold hover:underline pointer-events-auto"
+                                      >
+                                        View
+                                      </a>
+                                    </div>
+                                  <% else %>
+                                    <div class="flex items-center gap-3 pointer-events-none">
+                                      <svg
+                                        width="18"
+                                        height="18"
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        class="text-accent shrink-0"
+                                        stroke-width="2"
+                                        stroke-linecap="round"
+                                        stroke-linejoin="round"
+                                      >
+                                        <path d="M12 16V4M12 4 7 9M12 4l5 5" />
+                                        <path d="M20 16v3a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-3" />
+                                      </svg>
+                                      <span class="min-w-0 break-words text-xs ink-dim">
+                                        Upload photo or scan of KRA Certificate
+                                      </span>
+                                    </div>
+                                  <% end %>
+                                <% end %>
+                              </div>
+                            </div>
+                          </div>
+                        </section>
 
     <!-- STEP 3 -->
 
@@ -2053,70 +2173,85 @@ end
                                 </div>
                                 <div>
                                   <span class="font-medium ink">Uploads:</span>
-                                  {if Enum.empty?(@uploads.id_front.entries),
-                                    do: "Front missing",
-                                    else: "Front attached"}, {if Enum.empty?(
-                                                                   @uploads.id_back.entries
-                                                                 ),
-                                                                 do: "Back missing",
-                                                                 else: "Back attached"}
+                                  {if document_attached?(
+                                        @uploads,
+                                        @form_data,
+                                        :id_front,
+                                        "id_front_url"
+                                      ),
+                                      do: "Front attached",
+                                      else: "Front missing"}, {if document_attached?(
+                                                                    @uploads,
+                                                                    @form_data,
+                                                                    :id_back,
+                                                                    "id_back_url"
+                                                                  ),
+                                                                  do: "Back attached",
+                                                                  else: "Back missing"}
                                 </div>
                               </div>
                             </div>
 
     <!-- Step 3 Summary -->
-                            <div class="panel-alt border border-token rounded-lg p-4">
-                              <div class="flex items-center justify-between mb-2">
-                                <h3 class="font-semibold ink text-sm">3. Property details</h3>
-                                <button
-                                  type="button"
-                                  phx-click="go_to_step"
-                                  phx-value-step="3"
-                                  class="text-accent hover:underline font-medium"
-                                >
-                                  Edit
-                                </button>
-                              </div>
-                              <div class="grid grid-cols-2 gap-2 ink-dim">
-                                <div>
-                                  <span class="font-medium ink">Intent:</span> {String.capitalize(
-                                    @form_data["listing_purpose"] || "renting"
-                                  )}
-                                </div>
-                                <div>
-                                  <span class="font-medium ink">Property name:</span> {@form_data[
-                                    "property_name"
-                                  ]}
-                                </div>
-                                <div>
-                                  <span class="font-medium ink">Location:</span> {@form_data[
-                                    "property_location"
-                                  ]}
-                                </div>
-                                <div>
-                                  <span class="font-medium ink">Ownership type:</span> {@form_data[
-                                    "ownership_type"
-                                  ]}
-                                </div>
-                                <div>
-                                  <span class="font-medium ink">Title / LR no:</span> {@form_data[
-                                    "lr_number"
-                                  ]}
-                                </div>
-                                <div>
-                                  <span class="font-medium ink">Total units:</span> {@form_data[
-                                    "total_units"
-                                  ]}
-                                </div>
-                                <div>
-                                  <span class="font-medium ink">Ownership doc:</span>
-                                  {if Enum.empty?(@uploads.ownership_doc.entries) and
-                                      (@form_data["ownership_doc_url"] in [nil, ""]),
-                                    do: "Not uploaded",
-                                    else: "Attached"}
-                                </div>
-                              </div>
-                            </div>
+                           <div class="panel-alt border border-token rounded-lg p-4">
+  <div class="flex items-center justify-between mb-2">
+    <h3 class="font-semibold ink text-sm">3. Property details</h3>
+    <button
+      type="button"
+      phx-click="go_to_step"
+      phx-value-step="3"
+      class="text-accent hover:underline font-medium"
+    >
+      Edit
+    </button>
+  </div>
+  <div class="grid grid-cols-2 gap-2 ink-dim">
+    <div>
+      <span class="font-medium ink">Intent:</span> {String.capitalize(
+        @form_data["listing_purpose"] || "renting"
+      )}
+    </div>
+    <div>
+      <span class="font-medium ink">Property name:</span> {@form_data[
+        "property_name"
+      ]}
+    </div>
+    <div>
+      <span class="font-medium ink">Location:</span> {@form_data[
+        "property_location"
+      ]}
+    </div>
+    <div>
+      <span class="font-medium ink">Ownership type:</span> {@form_data[
+        "ownership_type"
+      ]}
+    </div>
+    <div>
+      <span class="font-medium ink">Title / LR no:</span> {@form_data[
+        "lr_number"
+      ]}
+    </div>
+    <div>
+      <span class="font-medium ink">Total units:</span> {@form_data[
+        "total_units"
+      ]}
+    </div>
+    <div>
+      <span class="font-medium ink">Ownership doc:</span>
+      {cond do
+        @form_data["ownership_doc_url"] not in [nil, ""] ->
+          "Attached"
+
+        @uploads.ownership_doc.entries != [] ->
+          entry = List.first(@uploads.ownership_doc.entries)
+          if entry.done?, do: "Attached", else: "Uploading..."
+
+        true ->
+          "Not uploaded"
+      end}
+    </div>
+  </div>
+</div>
 
     <!-- Step 4 Summary -->
                             <div class="panel-alt border border-token rounded-lg p-4">
@@ -2185,8 +2320,12 @@ end
     <!-- Footer Navigation -->
                   <div class="px-4 sm:px-8 py-4 border-t border-token flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                     <button
-                      type="button"
-                      phx-click="save_draft"
+                      type="submit"
+                      disabled={upload_in_progress?(@uploads)}
+                      form="landlord-kyc-form"
+                      name="_action"
+                      value="save_draft"
+                      formnovalidate
                       class="btn-ghost w-full sm:w-auto rounded-lg px-4 py-2.5 text-xs sm:text-sm font-semibold"
                     >
                       Save &amp; continue later
@@ -2203,8 +2342,11 @@ end
 
                       <%= if @step < 5 do %>
                         <button
-                          type="button"
-                          phx-click="next_step"
+                          type="submit"
+                          form="landlord-kyc-form"
+                          name="_action"
+                          value="next_step"
+                          formnovalidate
                           class="btn-primary rounded-lg px-6 py-2.5 text-xs sm:text-sm font-semibold"
                         >
                           Continue
@@ -2213,6 +2355,8 @@ end
                         <button
                           type="submit"
                           form="landlord-kyc-form"
+                          name="_action"
+                          value="register"
                           class="btn-primary rounded-lg px-6 py-2.5 text-xs sm:text-sm font-semibold"
                         >
                           Submit for verification

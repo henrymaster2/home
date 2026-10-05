@@ -29,7 +29,6 @@ defmodule HomeWeb.Router do
     post "/users/log_in", UserSessionController, :create
     delete "/users/log_out", UserSessionController, :delete
     live "/house", Ownerdash, :index
-    live "/verify", Verify.Text
     live "/verification", Lite.Register
     get "/auth/google", GoogleAuthController, :request
     get "/auth/google/callback", GoogleAuthController, :callback
@@ -70,6 +69,7 @@ defmodule HomeWeb.Router do
       live "/admin/bookings", Admin.BookingsLive
       live "/admin/property", Admin.PropertyLive
       live "/home", Lite.DashboardLive
+      live "/verify", Verify.Text
       # settings
       live "/users/settings", UserLive.Settings, :edit
       live "/users/settings/confirm-email/:token", UserLive.Settings, :confirm_email
@@ -86,6 +86,7 @@ defmodule HomeWeb.Router do
       live "/users/register", UserLive.Registration, :new
       live "/users/log-in", UserLive.Login, :new
       live "/users/log-in/:token", UserLive.Confirmation, :new
+      live "/process", Process.Text
       live "/test-house", Text.Test
       live "/test", Text.Test
     end

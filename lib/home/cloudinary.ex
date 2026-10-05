@@ -14,41 +14,41 @@ defmodule Home.Cloudinary do
   Returns `{:ok, secure_url}` on success or `{:error, reason}` on failure.
   """
   def upload(local_path, folder \\ "properties") when is_binary(local_path) do
-  with {:ok, cloud_name} <- fetch_env("CLOUDINARY_CLOUD_NAME"),
-       {:ok, api_key} <- fetch_env("CLOUDINARY_API_KEY"),
-       {:ok, api_secret} <- fetch_env("CLOUDINARY_API_SECRET") do
-    timestamp = System.system_time(:second) |> Integer.to_string()
+    with {:ok, cloud_name} <- fetch_env("CLOUDINARY_CLOUD_NAME"),
+         {:ok, api_key} <- fetch_env("CLOUDINARY_API_KEY"),
+         {:ok, api_secret} <- fetch_env("CLOUDINARY_API_SECRET") do
+      timestamp = System.system_time(:second) |> Integer.to_string()
 
-    # Include folder in signature calculations
-    params_to_sign = %{"timestamp" => timestamp, "folder" => folder}
-    signature = sign(params_to_sign, api_secret)
+      # Include folder in signature calculations
+      params_to_sign = %{"timestamp" => timestamp, "folder" => folder}
+      signature = sign(params_to_sign, api_secret)
 
-    url = "https://api.cloudinary.com/v1_1/#{cloud_name}/auto/upload"
+      url = "https://api.cloudinary.com/v1_1/#{cloud_name}/auto/upload"
 
-    Req.post(url,
-      form_multipart: [
-        api_key: api_key,
-        timestamp: timestamp,
-        folder: folder,
-        signature: signature,
-        file: {File.stream!(local_path, [], 2048), filename: Path.basename(local_path)}
-      ]
-    )
-    |> case do
-      {:ok, %Req.Response{status: 200, body: %{"secure_url" => secure_url}}} ->
-        {:ok, secure_url}
+      Req.post(url,
+        form_multipart: [
+          api_key: api_key,
+          timestamp: timestamp,
+          folder: folder,
+          signature: signature,
+          file: {File.stream!(local_path, [], 2048), filename: Path.basename(local_path)}
+        ]
+      )
+      |> case do
+        {:ok, %Req.Response{status: 200, body: %{"secure_url" => secure_url}}} ->
+          {:ok, secure_url}
 
-      {:ok, %Req.Response{status: 200, body: body}} ->
-        {:error, {:unexpected_response, body}}
+        {:ok, %Req.Response{status: 200, body: body}} ->
+          {:error, {:unexpected_response, body}}
 
-      {:ok, %Req.Response{status: status, body: body}} ->
-        {:error, {:http_error, status, body}}
+        {:ok, %Req.Response{status: status, body: body}} ->
+          {:error, {:http_error, status, body}}
 
-      {:error, reason} ->
-        {:error, reason}
+        {:error, reason} ->
+          {:error, reason}
+      end
     end
   end
-end
 
   defp fetch_env(key) do
     case System.get_env(key) do
@@ -66,5 +66,4 @@ end
     |> then(&:crypto.hash(:sha, &1))
     |> Base.encode16(case: :lower)
   end
-
 end

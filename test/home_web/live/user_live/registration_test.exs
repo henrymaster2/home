@@ -4,6 +4,10 @@ defmodule HomeWeb.UserLive.RegistrationTest do
   import Phoenix.LiveViewTest
   import Home.AccountsFixtures
 
+  alias Home.Accounts
+  alias Home.Accounts.{Landlord, LandlordDocument}
+  alias Home.Repo
+
   describe "Registration page" do
     test "renders registration page", %{conn: conn} do
       {:ok, _lv, html} = live(conn, ~p"/users/register")
@@ -106,6 +110,75 @@ defmodule HomeWeb.UserLive.RegistrationTest do
       assert html =~ "Proof of ownership & property details"
       assert html =~ "https://example.com/uploads/ownership.pdf"
       assert html =~ "View"
+    end
+
+    test "hydrates review step from existing landlord document URLs", %{conn: conn} do
+      admin = user_fixture(%{email: unique_user_email(), role: "admin", names: "System Admin"})
+      email = unique_user_email()
+
+      invite =
+        Accounts.create_invite(%{
+          email: email,
+          token: Ecto.UUID.generate(),
+          invite_type: "landlord",
+          expires_at: DateTime.utc_now() |> DateTime.add(7, :day),
+          created_by_id: admin.id
+        })
+        |> elem(1)
+
+      user =
+        user_fixture(%{
+          email: email,
+          role: "landlord",
+          names: "Jane Landlord",
+          phone: "0712345678",
+          id_number: "12345678"
+        })
+
+      landlord =
+        Repo.insert!(%Landlord{
+          entity_type: "individual",
+          names: "Jane Landlord",
+          email: email,
+          phone: "0712345678",
+          id_type: "National ID",
+          id_number: "12345678",
+          kra_pin: "A123456789Z",
+          listing_purpose: "renting",
+          property_name: "Sunrise Flats",
+          ownership_type: "Freehold title",
+          lr_number: "LR 123",
+          property_location: "Kisii",
+          total_units: 4,
+          user_id: user.id
+        })
+
+      Repo.insert!(%LandlordDocument{
+        landlord_id: landlord.id,
+        document_type: "id_front",
+        file_url: "https://res.cloudinary.com/demo/front.jpg"
+      })
+
+      Repo.insert!(%LandlordDocument{
+        landlord_id: landlord.id,
+        document_type: "id_back",
+        file_url: "https://res.cloudinary.com/demo/back.jpg"
+      })
+
+      {:ok, request} =
+        Accounts.create_verification_request(%{
+          names: "Jane Landlord",
+          email: email,
+          phone: "0712345678"
+        })
+
+      {:ok, _request} = Accounts.save_verification_draft(request, %{}, %{}, 5)
+
+      {:ok, _lv, html} = live(conn, ~p"/verification?token=#{invite.token}")
+
+      assert html =~ "Review &amp; submit"
+      assert html =~ "Front attached"
+      assert html =~ "Back attached"
     end
   end
 

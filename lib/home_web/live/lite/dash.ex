@@ -11,7 +11,7 @@ defmodule HomeWeb.Lite.DashboardLive do
 
     # Fetch initial requests from DB
     verification_requests = Accounts.list_verification_requests()
-  current_user = socket.assigns.current_scope.user
+    current_user = socket.assigns.current_scope.user
 
     socket =
       socket
@@ -60,55 +60,59 @@ defmodule HomeWeb.Lite.DashboardLive do
     {:noreply, assign(socket, :theme, theme)}
   end
 
-@impl true
-def handle_event("save_landlord", %{"landlord" => landlord_params}, socket) do
-  email = String.trim(landlord_params["email"] || "")
-  admin_lite_user = socket.assigns.current_scope.user
-  base_url = HomeWeb.Endpoint.url()
-  landlord_request = Accounts.get_verification_request_by_email(email)
+  @impl true
+  def handle_event("save_landlord", %{"landlord" => landlord_params}, socket) do
+    email = String.trim(landlord_params["email"] || "")
+    admin_lite_user = socket.assigns.current_scope.user
+    base_url = HomeWeb.Endpoint.url()
+    landlord_request = Accounts.get_verification_request_by_email(email)
 
-  # 1. Check if an active (unexpired, unused) invite already exists for this email
-  case Accounts.get_active_landlord_invite_by_email(email) do
-    %Accounts.AdminLiteInvite{} = existing_invite ->
-      invite_url = "#{base_url}/verification?token=#{existing_invite.token}"
+    # 1. Check if an active (unexpired, unused) invite already exists for this email
+    case Accounts.get_active_landlord_invite_by_email(email) do
+      %Accounts.AdminLiteInvite{} = existing_invite ->
+        invite_url = "#{base_url}/verification?token=#{existing_invite.token}"
 
-      {:noreply,
-       socket
-       |> put_flash(:info, "Reused existing active invite link for #{email}.")
-       |> assign(
-         generated_link: invite_url,
-         selected_landlord_request: landlord_request
-       )}
+        {:noreply,
+         socket
+         |> put_flash(:info, "Reused existing active invite link for #{email}.")
+         |> assign(
+           generated_link: invite_url,
+           selected_landlord_request: landlord_request
+         )}
 
-    _ ->
-      # 2. No active invite found; create a new one
-      invite_params = %{
-        email: email,
-        token: :crypto.strong_rand_bytes(32) |> Base.url_encode64(padding: false),
-        expires_at: DateTime.add(DateTime.utc_now(), 48, :hour),
-        invite_type: "landlord",
-        created_by_id: admin_lite_user.id
-      }
+      _ ->
+        # 2. No active invite found; create a new one
+        invite_params = %{
+          email: email,
+          token: :crypto.strong_rand_bytes(32) |> Base.url_encode64(padding: false),
+          expires_at: DateTime.add(DateTime.utc_now(), 48, :hour),
+          invite_type: "landlord",
+          created_by_id: admin_lite_user.id
+        }
 
-      case Accounts.create_invite(invite_params) do
-        {:ok, invite} ->
-          invite_url = "#{base_url}/verification?token=#{invite.token}"
+        case Accounts.create_invite(invite_params) do
+          {:ok, invite} ->
+            invite_url = "#{base_url}/verification?token=#{invite.token}"
 
-          {:noreply,
-           socket
-           |> put_flash(:info, "New invite link generated successfully!")
-           |> assign(
-             generated_link: invite_url,
-             selected_landlord_request: landlord_request,
-             landlords: Accounts.list_verification_requests()
-           )}
+            {:noreply,
+             socket
+             |> put_flash(:info, "New invite link generated successfully!")
+             |> assign(
+               generated_link: invite_url,
+               selected_landlord_request: landlord_request,
+               landlords: Accounts.list_verification_requests()
+             )}
 
-        {:error, _changeset} ->
-          {:noreply,
-           put_flash(socket, :error, "Could not create invite link. Please check email details.")}
-      end
+          {:error, _changeset} ->
+            {:noreply,
+             put_flash(
+               socket,
+               :error,
+               "Could not create invite link. Please check email details."
+             )}
+        end
+    end
   end
-end
 
   @impl true
   def handle_event("toggle_mobile_menu", _params, socket) do
@@ -128,6 +132,11 @@ end
       |> assign(:mobile_menu_open, false)
 
     {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("select_tab", %{"tab" => tab}, socket) do
+    {:noreply, assign(socket, :active_tab, tab)}
   end
 
   @impl true
@@ -187,10 +196,6 @@ end
     |> Enum.join()
     |> String.upcase()
   end
-  @impl true
-def handle_event("select_tab", %{"tab" => tab}, socket) do
-  {:noreply, assign(socket, :active_tab, tab)}
-end
 
   @impl true
   def render(assigns) do
@@ -240,7 +245,7 @@ end
               </svg>
             </button>
             <div class="font-semibold text-sm tracking-tight text-[var(--text-main)]">
-              Welcome,<br><%= @user_name%>👋
+              Welcome,<br />{@user_name}👋
             </div>
           </div>
           <button
@@ -288,7 +293,7 @@ end
               </div>
               <div>
                 <div class="font-semibold text-sm text-[var(--text-main)]">Operations Panel</div>
-                <div class="text-xs text-[var(--text-muted)]"><%= @user_name%>😊</div>
+                <div class="text-xs text-[var(--text-muted)]">{@user_name}😊</div>
               </div>
             </div>
 
@@ -321,11 +326,9 @@ end
               >
                 Landlords
               </button>
-                               <.link
-
-            navigate={~p"/verify"}
-            phx-no-format
-
+              <.link
+                navigate={~p"/verify"}
+                phx-no-format
                 class="w-full flex items-center gap-3 px-3.5 py-2.5 text-xs font-medium hover:text-[var(--text-main)] hover:bg-white/5"
                 style={
                   if @active_tab == "verifications",
@@ -404,8 +407,8 @@ end
               <span>Add Landlord</span>
             </button>
           </div>
-
-         <!--first card balance card-->
+          
+    <!--first card balance card-->
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
             <div
               class="rounded-2xl relative overflow-hidden flex flex-col justify-between"
@@ -423,16 +426,46 @@ end
                       class="px-2.5 py-1 rounded-lg text-[11px] font-medium border border-[var(--border)] bg-slate-900/40 text-[var(--text-muted)] hover:text-[var(--text-main)] hover:border-[var(--accent-purple-light)] transition flex items-center gap-1.5"
                     >
                       <span>Monthly</span>
-                      <svg class="w-3 h-3 text-[var(--text-muted)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                      <svg
+                        class="w-3 h-3 text-[var(--text-muted)]"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          stroke-width="2"
+                          d="M19 9l-7 7-7-7"
+                        />
                       </svg>
                     </button>
 
                     <div class="hidden group-hover:block absolute right-0 mt-1 w-28 rounded-xl border border-[var(--border)] bg-[var(--bg-card)] shadow-2xl z-20 py-1 text-xs">
-                      <button type="button" class="w-full text-left px-3 py-1.5 hover:bg-violet-500/10 text-[var(--text-main)] transition">Daily</button>
-                      <button type="button" class="w-full text-left px-3 py-1.5 hover:bg-violet-500/10 text-[var(--text-main)] transition">Weekly</button>
-                      <button type="button" class="w-full text-left px-3 py-1.5 hover:bg-violet-500/10 text-[var(--accent-purple-light)] font-semibold transition">Monthly</button>
-                      <button type="button" class="w-full text-left px-3 py-1.5 hover:bg-violet-500/10 text-[var(--text-main)] transition">Yearly</button>
+                      <button
+                        type="button"
+                        class="w-full text-left px-3 py-1.5 hover:bg-violet-500/10 text-[var(--text-main)] transition"
+                      >
+                        Daily
+                      </button>
+                      <button
+                        type="button"
+                        class="w-full text-left px-3 py-1.5 hover:bg-violet-500/10 text-[var(--text-main)] transition"
+                      >
+                        Weekly
+                      </button>
+                      <button
+                        type="button"
+                        class="w-full text-left px-3 py-1.5 hover:bg-violet-500/10 text-[var(--accent-purple-light)] font-semibold transition"
+                      >
+                        Monthly
+                      </button>
+                      <button
+                        type="button"
+                        class="w-full text-left px-3 py-1.5 hover:bg-violet-500/10 text-[var(--text-main)] transition"
+                      >
+                        Yearly
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -450,14 +483,23 @@ end
                     style="background: var(--accent-purple); box-shadow: 0 4px 12px var(--accent-purple-glow);"
                   >
                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19V5m0 0l-7 7m7-7l7 7" />
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d="M12 19V5m0 0l-7 7m7-7l7 7"
+                      />
                     </svg>
                     <span>Withdraw</span>
                   </button>
                 </div>
 
                 <div class="w-full h-14 relative mt-1">
-                  <svg class="w-full h-full overflow-visible" viewBox="0 0 300 60" preserveAspectRatio="none">
+                  <svg
+                    class="w-full h-full overflow-visible"
+                    viewBox="0 0 300 60"
+                    preserveAspectRatio="none"
+                  >
                     <defs>
                       <linearGradient id="balanceChartGradient" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="0%" stop-color="var(--accent-purple-light)" stop-opacity="0.35" />
@@ -499,17 +541,25 @@ end
             >
               <div class="grid grid-cols-3 gap-2 bg-slate-900/40 p-1.5 rounded-xl border border-[var(--border)] text-center">
                 <div class="py-2 px-2 rounded-lg bg-[var(--accent-purple)]/20 border border-[var(--accent-purple)]/40">
-                  <div class="text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-wider">Total</div>
-                  <div class="text-xs font-bold text-[var(--text-main)] mt-0.5">{length(@landlords)}</div>
+                  <div class="text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-wider">
+                    Total
+                  </div>
+                  <div class="text-xs font-bold text-[var(--text-main)] mt-0.5">
+                    {length(@landlords)}
+                  </div>
                 </div>
                 <div class="py-2 px-2 rounded-lg hover:bg-white/5 transition">
-                  <div class="text-[10px] font-semibold text-amber-400/80 uppercase tracking-wider">Pending</div>
+                  <div class="text-[10px] font-semibold text-amber-400/80 uppercase tracking-wider">
+                    Pending
+                  </div>
                   <div class="text-xs font-bold text-amber-400 mt-0.5">
                     {Enum.count(@landlords, &(Map.get(&1, :status) == "pending"))}
                   </div>
                 </div>
                 <div class="py-2 px-2 rounded-lg hover:bg-white/5 transition">
-                  <div class="text-[10px] font-semibold text-violet-400/80 uppercase tracking-wider">Verified</div>
+                  <div class="text-[10px] font-semibold text-violet-400/80 uppercase tracking-wider">
+                    Verified
+                  </div>
                   <div class="text-xs font-bold text-violet-400 mt-0.5">
                     {Enum.count(@landlords, &(Map.get(&1, :status) == "verified"))}
                   </div>
@@ -521,7 +571,9 @@ end
                   Verification Overview
                 </div>
                 <div class="flex items-baseline gap-3 mt-1">
-                  <span class="text-2xl font-extrabold text-[var(--text-main)] tracking-tight">{length(@landlords)}</span>
+                  <span class="text-2xl font-extrabold text-[var(--text-main)] tracking-tight">
+                    {length(@landlords)}
+                  </span>
                   <span class="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                     Active Stream
                   </span>
@@ -531,10 +583,24 @@ end
               <div class="space-y-1.5">
                 <div class="flex items-center justify-between text-[11px] font-medium">
                   <span class="text-violet-400">
-                    Verified ({if length(@landlords) > 0, do: Float.round((Enum.count(@landlords, &(Map.get(&1, :status) == "verified")) / length(@landlords)) * 100, 1), else: 0.0}%)
+                    Verified ({if length(@landlords) > 0,
+                      do:
+                        Float.round(
+                          Enum.count(@landlords, &(Map.get(&1, :status) == "verified")) /
+                            length(@landlords) * 100,
+                          1
+                        ),
+                      else: 0.0}%)
                   </span>
                   <span class="text-amber-400">
-                    Pending ({if length(@landlords) > 0, do: Float.round((Enum.count(@landlords, &(Map.get(&1, :status) == "pending")) / length(@landlords)) * 100, 1), else: 0.0}%)
+                    Pending ({if length(@landlords) > 0,
+                      do:
+                        Float.round(
+                          Enum.count(@landlords, &(Map.get(&1, :status) == "pending")) /
+                            length(@landlords) * 100,
+                          1
+                        ),
+                      else: 0.0}%)
                   </span>
                 </div>
 
@@ -542,11 +608,13 @@ end
                   <div
                     class="h-full bg-violet-500 transition-all duration-500"
                     style={"width: #{if length(@landlords) > 0, do: Float.round((Enum.count(@landlords, &(Map.get(&1, :status) == "verified")) / length(@landlords)) * 100, 1), else: 0.0}%;"}
-                  ></div>
+                  >
+                  </div>
                   <div
                     class="h-full bg-amber-400 transition-all duration-500"
                     style={"width: #{if length(@landlords) > 0, do: Float.round((Enum.count(@landlords, &(Map.get(&1, :status) == "pending")) / length(@landlords)) * 100, 1), else: 0.0}%;"}
-                  ></div>
+                  >
+                  </div>
                 </div>
               </div>
             </div>
@@ -566,216 +634,264 @@ end
                 <span class="text-violet-400 font-semibold">Fully Verified</span>
               </div>
             </div>
+            
+    <!--second card-->
+            <% total_count = length(@landlords)
+            pending_count = Enum.count(@landlords, &(Map.get(&1, :status) == "pending"))
+            verified_count = Enum.count(@landlords, &(Map.get(&1, :status) == "verified"))
 
+            verified_pct =
+              if total_count > 0, do: Float.round(verified_count / total_count * 100, 1), else: 0.0
 
+            pending_pct =
+              if total_count > 0, do: Float.round(pending_count / total_count * 100, 1), else: 0.0 %>
+            <div
+              class="rounded-2xl p-4 transition-colors"
+              style="background: var(--bg-card); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid var(--border); box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.3);"
+            >
+              <!-- Tabs -->
+              <div
+                class="mb-5 grid grid-cols-3 gap-1 rounded-xl p-1"
+                style={
+                  if @theme == "light",
+                    do: "background: #f1f5f9;",
+                    else: "background: rgba(30, 41, 59, 0.6);"
+                }
+              >
+                <button
+                  class="rounded-lg py-2 text-xs font-semibold shadow-sm"
+                  style={
+                    if @theme == "light",
+                      do: "background: #ffffff; color: #0f172a;",
+                      else: "background: #334155; color: #ffffff;"
+                  }
+                >
+                  Total
+                </button>
+                <button
+                  class="rounded-lg py-2 text-xs font-semibold"
+                  style="color: var(--text-muted);"
+                >
+                  Pending
+                </button>
+                <button
+                  class="rounded-lg py-2 text-xs font-semibold"
+                  style="color: var(--text-muted);"
+                >
+                  Verified
+                </button>
+              </div>
+              
+    <!-- Header -->
+              <div class="mb-5 flex items-start justify-between">
+                <div>
+                  <p
+                    class="text-[10px] font-bold uppercase tracking-widest"
+                    style="color: var(--text-muted);"
+                  >
+                    Verification Overview
+                  </p>
+                  <div class="mt-1 flex items-baseline gap-2">
+                    <span class="text-3xl font-extrabold" style="color: var(--text-main);">
+                      {total_count}
+                    </span>
+                    <span class="text-xs" style="color: var(--text-muted);">Total Requests</span>
+                  </div>
+                </div>
 
-         <!--second card-->
-         <%
-total_count = length(@landlords)
-pending_count = Enum.count(@landlords, &(Map.get(&1, :status) == "pending"))
-verified_count = Enum.count(@landlords, &(Map.get(&1, :status) == "verified"))
-verified_pct = if total_count > 0, do: Float.round(verified_count / total_count * 100, 1), else: 0.0
-pending_pct = if total_count > 0, do: Float.round(pending_count / total_count * 100, 1), else: 0.0
-%>
-<div
-  class="rounded-2xl p-4 transition-colors"
-  style="background: var(--bg-card); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid var(--border); box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.3);"
->
-  <!-- Tabs -->
-  <div
-    class="mb-5 grid grid-cols-3 gap-1 rounded-xl p-1"
-    style={if @theme == "light", do: "background: #f1f5f9;", else: "background: rgba(30, 41, 59, 0.6);"}
-  >
-    <button
-      class="rounded-lg py-2 text-xs font-semibold shadow-sm"
-      style={
-        if @theme == "light",
-          do: "background: #ffffff; color: #0f172a;",
-          else: "background: #334155; color: #ffffff;"
-      }
-    >
-      Total
-    </button>
-    <button class="rounded-lg py-2 text-xs font-semibold" style="color: var(--text-muted);">
-      Pending
-    </button>
-    <button class="rounded-lg py-2 text-xs font-semibold" style="color: var(--text-muted);">
-      Verified
-    </button>
-  </div>
+                <span
+                  class="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-semibold"
+                  style={
+                    if @theme == "light",
+                      do: "border: 1px solid #a7f3d0; background: #ecfdf5; color: #047857;",
+                      else:
+                        "border: 1px solid rgba(16, 185, 129, 0.2); background: rgba(16, 185, 129, 0.1); color: #34d399;"
+                  }
+                >
+                  <i class="h-1.5 w-1.5 rounded-full bg-emerald-500"></i> Active
+                </span>
+              </div>
+              
+    <!-- Metrics -->
+              <div class="grid grid-cols-2 gap-3">
+                <div
+                  class="rounded-xl p-3"
+                  style={
+                    if @theme == "light",
+                      do: "border: 1px solid #fde68a; background: #fffbeb;",
+                      else:
+                        "border: 1px solid rgba(245, 158, 11, 0.2); background: rgba(245, 158, 11, 0.1);"
+                  }
+                >
+                  <div class="flex items-center justify-between">
+                    <span
+                      class="flex items-center gap-2 text-xs font-semibold"
+                      style={if @theme == "light", do: "color: #78350f;", else: "color: #fcd34d;"}
+                    >
+                      <i class="h-2 w-2 rounded-full bg-amber-500"></i> Pending
+                    </span>
+                    <b
+                      class="text-lg"
+                      style={if @theme == "light", do: "color: #92400e;", else: "color: #fcd34d;"}
+                    >
+                      {pending_count}
+                    </b>
+                  </div>
+                  <p
+                    class="mt-1 text-[10px]"
+                    style={
+                      if @theme == "light",
+                        do: "color: rgba(180, 83, 9, 0.7);",
+                        else: "color: rgba(252, 211, 77, 0.7);"
+                    }
+                  >
+                    {pending_pct}% of requests
+                  </p>
+                </div>
 
-  <!-- Header -->
-  <div class="mb-5 flex items-start justify-between">
-    <div>
-      <p class="text-[10px] font-bold uppercase tracking-widest" style="color: var(--text-muted);">
-        Verification Overview
-      </p>
-      <div class="mt-1 flex items-baseline gap-2">
-        <span class="text-3xl font-extrabold" style="color: var(--text-main);"><%= total_count %></span>
-        <span class="text-xs" style="color: var(--text-muted);">Total Requests</span>
-      </div>
-    </div>
+                <div
+                  class="rounded-xl p-3"
+                  style={
+                    if @theme == "light",
+                      do: "border: 1px solid #ddd6fe; background: #f5f3ff;",
+                      else:
+                        "border: 1px solid rgba(139, 92, 246, 0.2); background: rgba(139, 92, 246, 0.1);"
+                  }
+                >
+                  <div class="flex items-center justify-between">
+                    <span
+                      class="flex items-center gap-2 text-xs font-semibold"
+                      style={if @theme == "light", do: "color: #4c1d95;", else: "color: #c4b5fd;"}
+                    >
+                      <i class="h-2 w-2 rounded-full bg-violet-500"></i> Verified
+                    </span>
+                    <b
+                      class="text-lg"
+                      style={if @theme == "light", do: "color: #5b21b6;", else: "color: #c4b5fd;"}
+                    >
+                      {verified_count}
+                    </b>
+                  </div>
+                  <p
+                    class="mt-1 text-[10px]"
+                    style={
+                      if @theme == "light",
+                        do: "color: rgba(91, 33, 182, 0.7);",
+                        else: "color: rgba(196, 181, 253, 0.7);"
+                    }
+                  >
+                    {verified_pct}% of requests
+                  </p>
+                </div>
+              </div>
+              
+    <!-- Progress -->
+              <div class="mt-4">
+                <div class="mb-1.5 flex justify-between text-[10px]" style="color: var(--text-muted);">
+                  <span>Verification progress</span><span><%= verified_pct %>% verified</span>
+                </div>
+                <div
+                  class="h-2 overflow-hidden rounded-full"
+                  style={
+                    if @theme == "light",
+                      do: "background: #f1f5f9;",
+                      else: "background: rgba(30, 41, 59, 0.8);"
+                  }
+                >
+                  <div
+                    class="h-full rounded-full bg-violet-500 transition-all duration-500"
+                    style={"width: #{verified_pct}%"}
+                  >
+                  </div>
+                </div>
+              </div>
+            </div>
+            <!-- third card -->
+            <div
+              class="rounded-2xl p-5 flex flex-col justify-between relative overflow-hidden transition-all duration-200 hover:border-violet-500/40 group"
+              style="background: var(--bg-card); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid var(--border); box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.3);"
+            >
+              <div class="flex items-center justify-between">
+                <span class="text-xs font-medium text-[var(--text-muted)]">
+                  Verified & Active Invites
+                </span>
+                <div class="w-8 h-8 rounded-lg flex items-center justify-center bg-violet-500/10 text-violet-400 group-hover:scale-110 transition-transform">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                    />
+                  </svg>
+                </div>
+              </div>
 
-    <span
-      class="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-semibold"
-      style={
-        if @theme == "light",
-          do: "border: 1px solid #a7f3d0; background: #ecfdf5; color: #047857;",
-          else: "border: 1px solid rgba(16, 185, 129, 0.2); background: rgba(16, 185, 129, 0.1); color: #34d399;"
-      }
-    >
-      <i class="h-1.5 w-1.5 rounded-full bg-emerald-500"></i> Active
-    </span>
-  </div>
+              <div class="flex items-baseline justify-between mt-3">
+                <div class="text-2xl sm:text-3xl font-bold text-violet-400">
+                  {Enum.count(
+                    @landlords,
+                    &(Map.get(&1, :status) == "verified" || Map.get(&1, :invite_url) != nil)
+                  )}
+                </div>
 
-  <!-- Metrics -->
-  <div class="grid grid-cols-2 gap-3">
-    <div
-      class="rounded-xl p-3"
-      style={
-        if @theme == "light",
-          do: "border: 1px solid #fde68a; background: #fffbeb;",
-          else: "border: 1px solid rgba(245, 158, 11, 0.2); background: rgba(245, 158, 11, 0.1);"
-      }
-    >
-      <div class="flex items-center justify-between">
-        <span
-          class="flex items-center gap-2 text-xs font-semibold"
-          style={if @theme == "light", do: "color: #78350f;", else: "color: #fcd34d;"}
-        >
-          <i class="h-2 w-2 rounded-full bg-amber-500"></i> Pending
-        </span>
-        <b class="text-lg" style={if @theme == "light", do: "color: #92400e;", else: "color: #fcd34d;"}>
-          <%= pending_count %>
-        </b>
-      </div>
-      <p
-        class="mt-1 text-[10px]"
-        style={if @theme == "light", do: "color: rgba(180, 83, 9, 0.7);", else: "color: rgba(252, 211, 77, 0.7);"}
-      >
-        <%= pending_pct %>% of requests
-      </p>
-    </div>
+                <span class="text-[10px] font-medium text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                  {Enum.count(@landlords, &(Map.get(&1, :invite_url) != nil))} Active Links
+                </span>
+              </div>
 
-    <div
-      class="rounded-xl p-3"
-      style={
-        if @theme == "light",
-          do: "border: 1px solid #ddd6fe; background: #f5f3ff;",
-          else: "border: 1px solid rgba(139, 92, 246, 0.2); background: rgba(139, 92, 246, 0.1);"
-      }
-    >
-      <div class="flex items-center justify-between">
-        <span
-          class="flex items-center gap-2 text-xs font-semibold"
-          style={if @theme == "light", do: "color: #4c1d95;", else: "color: #c4b5fd;"}
-        >
-          <i class="h-2 w-2 rounded-full bg-violet-500"></i> Verified
-        </span>
-        <b class="text-lg" style={if @theme == "light", do: "color: #5b21b6;", else: "color: #c4b5fd;"}>
-          <%= verified_count %>
-        </b>
-      </div>
-      <p
-        class="mt-1 text-[10px]"
-        style={if @theme == "light", do: "color: rgba(91, 33, 182, 0.7);", else: "color: rgba(196, 181, 253, 0.7);"}
-      >
-        <%= verified_pct %>% of requests
-      </p>
-    </div>
-  </div>
+              <div class="mt-3 pt-3 border-t border-[var(--border)] space-y-2 max-h-36 overflow-y-auto pr-1">
+                <%= for l <- Enum.filter(@landlords, &(Map.get(&1, :invite_url) != nil)) do %>
+                  <div class="p-2 rounded-lg bg-slate-900/40 border border-[var(--border)] text-xs flex flex-col gap-1">
+                    <div class="flex items-center justify-between">
+                      <span class="font-semibold text-[var(--text-main)]">
+                        {Map.get(l, :names, "N/A")}
+                      </span>
+                      <span class="text-[10px] text-[var(--text-muted)] truncate max-w-[120px]">
+                        {Map.get(l, :email)}
+                      </span>
+                    </div>
 
-  <!-- Progress -->
-  <div class="mt-4">
-    <div class="mb-1.5 flex justify-between text-[10px]" style="color: var(--text-muted);">
-      <span>Verification progress</span><span><%= verified_pct %>% verified</span>
-    </div>
-    <div
-      class="h-2 overflow-hidden rounded-full"
-      style={if @theme == "light", do: "background: #f1f5f9;", else: "background: rgba(30, 41, 59, 0.8);"}
-    >
-      <div
-        class="h-full rounded-full bg-violet-500 transition-all duration-500"
-        style={"width: #{verified_pct}%"}
-      >
-      </div>
-    </div>
-  </div>
-</div>
-<!-- third card -->
-<div
-  class="rounded-2xl p-5 flex flex-col justify-between relative overflow-hidden transition-all duration-200 hover:border-violet-500/40 group"
-  style="background: var(--bg-card); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid var(--border); box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.3);"
->
-  <div class="flex items-center justify-between">
-    <span class="text-xs font-medium text-[var(--text-muted)]">Verified & Active Invites</span>
-    <div class="w-8 h-8 rounded-lg flex items-center justify-center bg-violet-500/10 text-violet-400 group-hover:scale-110 transition-transform">
-      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-      </svg>
-    </div>
-  </div>
+                    <div class="flex items-center justify-between gap-2 mt-1">
+                      <span class="text-[10px] font-mono text-purple-300 truncate max-w-[170px]">
+                        {l.active_invite && l.active_invite.token}
+                      </span>
+                      <button
+                        type="button"
+                        phx-click="copy_detail"
+                        phx-value-type="Token Link"
+                        phx-value-val={Map.get(l, :invite_url)}
+                        class="px-2 py-0.5 rounded text-[10px] bg-purple-600/30 text-purple-200 border border-purple-500/30 hover:bg-purple-600/50 transition shrink-0"
+                      >
+                        Copy
+                      </button>
+                    </div>
+                  </div>
+                <% end %>
 
-  <div class="flex items-baseline justify-between mt-3">
-    <div class="text-2xl sm:text-3xl font-bold text-violet-400">
-      {Enum.count(@landlords, &(Map.get(&1, :status) == "verified" || Map.get(&1, :invite_url) != nil))}
-    </div>
+                <%= if Enum.count(@landlords, &(Map.get(&1, :invite_url) != nil)) == 0 do %>
+                  <div class="text-[11px] text-[var(--text-muted)] py-1 text-center">
+                    No active tokens generated
+                  </div>
+                <% end %>
+              </div>
 
-    <span class="text-[10px] font-medium text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
-      {Enum.count(@landlords, &(Map.get(&1, :invite_url) != nil))} Active Links
-    </span>
-  </div>
-
-  <div class="mt-3 pt-3 border-t border-[var(--border)] space-y-2 max-h-36 overflow-y-auto pr-1">
-    <%= for l <- Enum.filter(@landlords, &(Map.get(&1, :invite_url) != nil)) do %>
-      <div class="p-2 rounded-lg bg-slate-900/40 border border-[var(--border)] text-xs flex flex-col gap-1">
-        <div class="flex items-center justify-between">
-          <span class="font-semibold text-[var(--text-main)]">{Map.get(l, :names, "N/A")}</span>
-          <span class="text-[10px] text-[var(--text-muted)] truncate max-w-[120px]">{Map.get(l, :email)}</span>
-        </div>
-
-        <div class="flex items-center justify-between gap-2 mt-1">
-          <span class="text-[10px] font-mono text-purple-300 truncate max-w-[170px]">
-            {l.active_invite && l.active_invite.token}
-          </span>
-          <button
-            type="button"
-            phx-click="copy_detail"
-            phx-value-type="Token Link"
-            phx-value-val={Map.get(l, :invite_url)}
-            class="px-2 py-0.5 rounded text-[10px] bg-purple-600/30 text-purple-200 border border-purple-500/30 hover:bg-purple-600/50 transition shrink-0"
-          >
-            Copy
-          </button>
-        </div>
-      </div>
-    <% end %>
-
-    <%= if Enum.count(@landlords, &(Map.get(&1, :invite_url) != nil)) == 0 do %>
-      <div class="text-[11px] text-[var(--text-muted)] py-1 text-center">
-        No active tokens generated
-      </div>
-    <% end %>
-  </div>
-
-  <div class="mt-3 pt-2 flex items-center justify-between text-[11px] text-[var(--text-muted)]">
-    <span>
-      {Enum.count(@landlords, &(Map.get(&1, :status) == "verified"))} Fully Verified
-    </span>
-    <button
-      type="button"
-      phx-click="select_tab"
-      phx-value-tab="verified"
-      class="text-violet-400 font-medium hover:underline transition-all"
-    >
-      Filter List &rarr;
-    </button>
-  </div>
-</div>
-</div>
-
-
-
+              <div class="mt-3 pt-2 flex items-center justify-between text-[11px] text-[var(--text-muted)]">
+                <span>
+                  {Enum.count(@landlords, &(Map.get(&1, :status) == "verified"))} Fully Verified
+                </span>
+                <button
+                  type="button"
+                  phx-click="select_tab"
+                  phx-value-tab="verified"
+                  class="text-violet-400 font-medium hover:underline transition-all"
+                >
+                  Filter List &rarr;
+                </button>
+              </div>
+            </div>
+          </div>
+          
     <!-- LANDLORD REQUESTS TABLE -->
           <div
             class="rounded-xl overflow-hidden border border-[var(--border)]"
