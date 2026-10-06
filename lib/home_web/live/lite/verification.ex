@@ -9,6 +9,9 @@ defmodule HomeWeb.Verify.Text do
     landlords = Accounts.list_pending_landlords_with_documents()
     selected_landlord = List.first(landlords)
 
+    if connected?(socket) do
+      Accounts.subscribe_verification_requests()
+    end
     mock_chat_messages = [
       %{
         sender: "admin",
@@ -31,6 +34,36 @@ defmodule HomeWeb.Verify.Text do
      |> assign(:message_text, "")
      |> assign(:approved_sections, %{})
      |> assign(:theme, "light")}
+  end
+
+  #pubsub helper functions
+@impl true
+  def handle_info({:new_landlord_registration, landlord}, socket) do
+    # Fetch preloaded documents for the new landlord if not preloaded in broadcast
+    landlord_with_docs = Accounts.get_landlord_with_documents(landlord.id) || landlord
+
+    # Prepend the new landlord to the list
+    updated_landlords = [landlord_with_docs | socket.assigns.landlords]
+
+    # If no landlord was selected initially, automatically select the new one
+    selected_landlord = socket.assigns.selected_landlord || landlord_with_docs
+
+    {:noreply,
+     socket
+     |> put_flash(:info, "New landlord registration completed: #{landlord.names}")
+     |> assign(:landlords, updated_landlords)
+     |> assign(:selected_landlord, selected_landlord)}
+  end
+
+  @impl true
+  def handle_info({:new_verification_request, _request}, socket) do
+    # Refresh the list when a general verification request is created
+    landlords = Accounts.list_pending_landlords_with_documents()
+
+    {:noreply,
+     socket
+     |> put_flash(:info, "New verification request received")
+     |> assign(:landlords, landlords)}
   end
 
   @impl true

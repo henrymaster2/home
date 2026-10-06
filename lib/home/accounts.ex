@@ -701,13 +701,19 @@ end
   end
 
   @doc """
-  Completes landlord onboarding by creating the User, Landlord, and document rows.
-  """
-  def complete_landlord_registration(invite, form_data) do
-    Repo.transaction(fn ->
-      create_or_update_landlord_registration(invite, form_data)
-    end)
+Completes landlord onboarding by creating the User, Landlord, and document rows.
+"""
+def complete_landlord_registration(invite, form_data) do
+  case Repo.transaction(fn -> create_or_update_landlord_registration(invite, form_data) end) do
+    {:ok, landlord} ->
+      # Broadcast event using your existing @pubsub and @topic
+      Phoenix.PubSub.broadcast(@pubsub, @topic, {:new_landlord_registration, landlord})
+      {:ok, landlord}
+
+    {:error, changeset_or_reason} ->
+      {:error, changeset_or_reason}
   end
+end
 
   defp create_or_update_landlord_registration(invite, form_data) do
     password = Map.get(form_data, "password") || "DefaultPass123!"
