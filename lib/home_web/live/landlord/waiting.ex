@@ -48,9 +48,24 @@ defmodule HomeWeb.Process.Text do
     {:noreply, assign(socket, :active_tab, tab)}
   end
 
-  def handle_event("toggle_theme", _params, socket) do
-    new_theme = if socket.assigns.theme == "dark", do: "light", else: "dark"
-    {:noreply, assign(socket, :theme, new_theme)}
+  def handle_event("toggle_theme", _, socket) do
+    new_theme =
+      if socket.assigns.theme == "dark" do
+        "light"
+      else
+        "dark"
+      end
+
+    {:noreply,
+     socket
+     |> assign(:theme, new_theme)
+     |> push_event("set_global_theme", %{theme: new_theme})}
+  end
+
+  @impl true
+  def handle_event("restore_theme", %{"theme" => theme}, socket)
+      when theme in ["dark", "light"] do
+    {:noreply, assign(socket, :theme, theme)}
   end
 
   def handle_event("toggle_chat", _params, socket) do
@@ -83,6 +98,7 @@ defmodule HomeWeb.Process.Text do
     <Layouts.app flash={@flash} current_scope={@current_scope}>
       <section
         id="landlord-verification-process"
+        phx-hook="HouseFinder"
         class={[
           "fixed inset-0 z-40 overflow-y-auto transition-colors duration-200",
           @theme == "dark" && "bg-[#0b1220] text-slate-100",
@@ -100,18 +116,14 @@ defmodule HomeWeb.Process.Text do
             ]}>
               <%!-- Theme Switcher & Progress Percentage (Top Right) --%>
               <div class="mb-4 flex items-center justify-end gap-3 sm:absolute sm:right-0 sm:top-0 sm:mb-0">
-                <button
-                  type="button"
+                  <button type="button"
                   phx-click="toggle_theme"
-                  class={[
-                    "flex size-10 items-center justify-center rounded-full border transition active:scale-95",
-                    @theme == "dark" && "border-slate-700 bg-[#0e1626] text-amber-400 hover:bg-slate-800",
-                    @theme == "light" && "border-slate-300 bg-white text-slate-700 shadow-sm hover:bg-slate-100"
-                  ]}
-                  title={"Switch to #{if @theme == "dark", do: "Light", else: "Dark"} mode"}
-                >
-                  <.icon name={if @theme == "dark", do: "hero-sun", else: "hero-moon"} class="size-5" />
-                </button>
+                  class={[ "flex size-10 items-center justify-center rounded-full border transition active:scale-95", @theme == "dark" && "border-slate-700 bg-[#0e1626] text-amber-400 hover:bg-slate-800", @theme == "light" && "border-slate-300 bg-white text-slate-700 shadow-sm hover:bg-slate-100" ]} title={"Switch to #{if @theme == "dark", do: "Light", else: "Dark"} mode"} >
+                  <%= if @theme == "dark" do %> <!-- Sun icon - shown in dark mode -->
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-6" >
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v2.25m6.364.386-1.591 1.591M21 12h-2.25m-.386 6.364-1.591-1.591M12 18.75V21m-4.773-4.227-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0Z" />
+                  </svg>
+                  <% else %> <!-- Moon icon - shown in light mode --> <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-6" > <path stroke-linecap="round" stroke-linejoin="round" d="M21.752 15.002A9.72 9.72 0 0 1 18 15.75c-5.385 0-9.75-4.365-9.75-9.75c0-1.33.266-2.597.748-3.752A9.753 9.753 0 0 0 3 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 0 0 9.002-5.998Z" /> </svg> <% end %> </button>
 
                 <div class="text-right">
                   <p class={[
@@ -147,7 +159,7 @@ defmodule HomeWeb.Process.Text do
                   @theme == "dark" && "text-slate-400",
                   @theme == "light" && "text-slate-600"
                 ]}>
-                  Your documents have been submitted for verification steps.
+                  Your documents have been submitted for verification steps.<br> ⚠️these are official documents avoid sharing this link with anyone
                 </p>
               </div>
 

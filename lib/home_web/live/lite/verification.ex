@@ -1,1001 +1,1205 @@
 defmodule HomeWeb.Verify.Text do
   use HomeWeb, :live_view
 
+  alias Home.Accounts
+
   @impl true
   def mount(_params, _session, socket) do
-    landlords = [
+    # Fetch landlords pending verification with preloaded documents
+    landlords = Accounts.list_pending_landlords_with_documents()
+    selected_landlord = List.first(landlords)
+
+    mock_chat_messages = [
       %{
-        id: "landlord_1",
-        full_name: "John Kamau Omondi",
-        email: "john.kamau@example.com",
-        phone: "+254 712 345 678",
-        whatsapp: "+254 748 172 255",
-        residence: "Kisii Marani",
-        category: "Individual Landlord",
-        doc_type: "National ID",
-        id_number: "32984012",
-        kra_pin: "A014982736Z",
-        intent: "Mixed",
-        property_name: "Kilimani Heights",
-        location: "Kisii Central",
-        ownership_type: "Freehold Title",
-        title_lr_no: "LR No: 209/18241",
-        total_units: "12",
-        billing_method: "M-Pesa",
-        billing_phone: "+254 712 345 678",
-        submitted_at: "Oct 04, 2026 • 14:20 EAT",
-        status: "pending",
-        identity_docs: [
-          %{
-            key: "id_front",
-            title: "National ID (Front)",
-            doc_no: "ID: 32984012",
-            image_url:
-              "https://images.unsplash.com/photo-1557804506-669a67965ba0?auto=format&fit=crop&w=800&q=80",
-            notes: "National ID front copy showing full name and ID number."
-          },
-          %{
-            key: "id_back",
-            title: "National ID (Back)",
-            doc_no: "ID: 32984012",
-            image_url:
-              "https://images.unsplash.com/photo-1589829545856-d10d557cf95f?auto=format&fit=crop&w=800&q=80",
-            notes: "National ID back copy displaying serial and signature."
-          },
-          %{
-            key: "kra_pin",
-            title: "KRA PIN Certificate",
-            doc_no: "KRA PIN: A014982736Z",
-            image_url:
-              "https://images.unsplash.com/photo-1568602471122-7832951cc4c5?auto=format&fit=crop&w=800&q=80",
-            notes: "Official Kenya Revenue Authority tax PIN document."
-          }
-        ],
-        property_docs: [
-          %{
-            key: "title_deed",
-            title: "Title Deed / Proof of Ownership",
-            doc_no: "LR No: 209/18241",
-            image_url:
-              "https://images.unsplash.com/photo-1560518883-ce09059eeffa?auto=format&fit=crop&w=800&q=80",
-            notes: "Registered title deed for land parcel 209/18241."
-          }
-        ]
-      },
-      %{
-        id: "landlord_2",
-        full_name: "Mary Wanjiku Njuguna",
-        email: "m.wanjiku@example.com",
-        phone: "+254 722 987 654",
-        whatsapp: "+254 722 987 654",
-        residence: "Nairobi West",
-        category: "Individual Landlord",
-        doc_type: "National ID",
-        id_number: "28471093",
-        kra_pin: "A009821451Y",
-        intent: "Residential",
-        property_name: "Sunrise Haven",
-        location: "Nairobi",
-        ownership_type: "Leasehold Title",
-        title_lr_no: "LR No: 104/552",
-        total_units: "8",
-        billing_method: "M-Pesa",
-        billing_phone: "+254 722 987 654",
-        submitted_at: "Oct 04, 2026 • 11:05 EAT",
-        status: "pending",
-        identity_docs: [
-          %{
-            key: "id_front",
-            title: "National ID (Front)",
-            doc_no: "ID: 28471093",
-            image_url:
-              "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80",
-            notes: "Front side national identity photo."
-          },
-          %{
-            key: "kra_pin",
-            title: "KRA PIN Certificate",
-            doc_no: "KRA PIN: A009821451Y",
-            image_url:
-              "https://images.unsplash.com/photo-1450133064473-71024230f91b?auto=format&fit=crop&w=800&q=80",
-            notes: "Tax registration PIN certificate."
-          }
-        ],
-        property_docs: []
+        sender: "admin",
+        author: "Admin Verification Team",
+        time: "10:15 AM",
+        text: "Hello! We are reviewing your submitted documents. Please reach out here if you have any questions."
       }
     ]
 
-    initial_messages = %{
-      "landlord_1" => [
-        %{sender: "system", text: "Automated: Landlord account registered.", time: "14:20"},
-        %{
-          sender: "landlord",
-          text: "Hello Admin, I have submitted all requested verification details.",
-          time: "14:22"
-        }
-      ]
-    }
-
     {:ok,
      socket
-     |> assign(:page_title, "Landlord Onboarding Portal")
-     |> assign(:theme, "dark")
-     |> assign(:mobile_tab, "documents")
+     |> assign(:page_title, "Admin - Landlord Verification Hub")
      |> assign(:landlords, landlords)
-     |> assign(:selected_landlord_id, "landlord_1")
-     |> assign(:active_step, 1)
-     |> assign(:chat_open, false)
-     |> assign(:chat_messages, initial_messages)
-     |> assign(:new_message, "")}
+     |> assign(:search_query, "")
+     |> assign(:selected_landlord, selected_landlord)
+     |> assign(:sidebar_open, false)
+     |> assign(:active_tab, "1")
+     |> assign(:show_chat, false)
+     |> assign(:chat_messages, mock_chat_messages)
+     |> assign(:message_text, "")
+     |> assign(:approved_sections, %{})
+     |> assign(:theme, "light")}
   end
 
   @impl true
-  def handle_event("toggle_theme", _params, socket) do
-    new_theme = if socket.assigns.theme == "dark", do: "light", else: "dark"
-    {:noreply, assign(socket, :theme, new_theme)}
-  end
-
-  @impl true
-  def handle_event("switch_mobile_tab", %{"tab" => tab}, socket) do
-    {:noreply, assign(socket, :mobile_tab, tab)}
-  end
-
-  @impl true
-  def handle_event("select_landlord", %{"id" => id}, socket) do
-    {:noreply,
-     socket
-     |> assign(:selected_landlord_id, id)
-     |> assign(:active_step, 1)
-     |> assign(:mobile_tab, "documents")}
-  end
-
-  @impl true
-  def handle_event("select_step", %{"step" => step}, socket) do
-    step_num = String.to_integer(step)
-    {:noreply, assign(socket, :active_step, step_num)}
-  end
-
-  @impl true
-  def handle_event("open_chat", _params, socket) do
-    {:noreply, assign(socket, :chat_open, true)}
-  end
-
-  @impl true
-  def handle_event("close_chat", _params, socket) do
-    {:noreply, assign(socket, :chat_open, false)}
-  end
-
-  @impl true
-  def handle_event("update_message", %{"value" => val}, socket) do
-    {:noreply, assign(socket, :new_message, val)}
-  end
-
-  @impl true
-  def handle_event("send_chat", %{"message" => text}, socket) do
-    trimmed = String.trim(text)
-
-    if trimmed == "" do
-      {:noreply, socket}
-    else
-      id = socket.assigns.selected_landlord_id
-      new_msg = %{sender: "admin", text: trimmed, time: "Just now"}
-      current_list = Map.get(socket.assigns.chat_messages, id, [])
-      updated_map = Map.put(socket.assigns.chat_messages, id, current_list ++ [new_msg])
-
-      {:noreply,
-       socket
-       |> assign(:chat_messages, updated_map)
-       |> assign(:new_message, "")
-       |> put_flash(:info, "Message sent to landlord.")}
-    end
-  end
-
-  @impl true
-  def handle_event("approve_landlord", %{"id" => id}, socket) do
-    updated_landlords =
-      Enum.map(socket.assigns.landlords, fn l ->
-        if l.id == id, do: Map.put(l, :status, "approved"), else: l
+  def handle_event("search_landlords", %{"search" => query}, socket) do
+    filtered =
+      socket.assigns.landlords
+      |> Enum.filter(fn l ->
+        name = String.downcase(l.names || "")
+        email = String.downcase(l.email || "")
+        q = String.downcase(query)
+        String.contains?(name, q) or String.contains?(email, q)
       end)
 
+    selected = if Enum.member?(filtered, socket.assigns.selected_landlord), do: socket.assigns.selected_landlord, else: List.first(filtered)
+
     {:noreply,
      socket
-     |> assign(:landlords, updated_landlords)
-     |> put_flash(:info, "Landlord details verified successfully.")}
+     |> assign(:search_query, query)
+     |> assign(:selected_landlord, selected)}
   end
+
+  def handle_event("select_landlord", %{"id" => landlord_id}, socket) do
+    landlord = Enum.find(socket.assigns.landlords, &(to_string(&1.id) == landlord_id))
+
+    {:noreply,
+     socket
+     |> assign(:selected_landlord, landlord)
+     |> assign(:sidebar_open, false)}
+  end
+
+  def handle_event("toggle_sidebar", _, socket) do
+    {:noreply, update(socket, :sidebar_open, &(!&1))}
+  end
+
+  def handle_event("select_tab", %{"tab" => tab}, socket) do
+    {:noreply, assign(socket, :active_tab, tab)}
+  end
+
+  def handle_event("toggle_theme", _, socket) do
+    new_theme = if socket.assigns.theme == "dark", do: "light", else: "dark"
+
+    {:noreply,
+     socket
+     |> assign(:theme, new_theme)
+     |> push_event("set_global_theme", %{theme: new_theme})}
+  end
+
+  def handle_event("restore_theme", %{"theme" => theme}, socket) when theme in ["dark", "light"] do
+    {:noreply, assign(socket, :theme, theme)}
+  end
+
+  def handle_event("approve_section", %{"section" => section}, socket) do
+    landlord_id = socket.assigns.selected_landlord && socket.assigns.selected_landlord.id
+
+    approved_sections =
+      if landlord_id do
+        Map.update(
+          socket.assigns.approved_sections,
+          landlord_id,
+          MapSet.new([section]),
+          &MapSet.put(&1, section)
+        )
+      else
+        socket.assigns.approved_sections
+      end
+
+    {:noreply,
+     socket
+     |> assign(:approved_sections, approved_sections)
+     |> put_flash(:info, "Approved #{section} for #{socket.assigns.selected_landlord.names || "Landlord"}")}
+  end
+
+  def handle_event("reject_section", %{"section" => section}, socket) do
+    landlord_id = socket.assigns.selected_landlord && socket.assigns.selected_landlord.id
+
+    approved_sections =
+      if landlord_id do
+        Map.update(
+          socket.assigns.approved_sections,
+          landlord_id,
+          MapSet.new(),
+          &MapSet.delete(&1, section)
+        )
+      else
+        socket.assigns.approved_sections
+      end
+
+    {:noreply,
+     socket
+     |> assign(:approved_sections, approved_sections)
+     |> put_flash(:error, "Rejected #{section} for #{socket.assigns.selected_landlord.names || "Landlord"}")}
+  end
+
+  def handle_event("open_inquire_modal", %{"section" => section}, socket) do
+    default_msg = "Hello, we have a question regarding your #{section}. Please clarify."
+
+    {:noreply,
+     socket
+     |> assign(:message_text, default_msg)
+     |> assign(:show_chat, true)}
+  end
+
+  def handle_event("toggle_chat", _params, socket) do
+    {:noreply, update(socket, :show_chat, &(!&1))}
+  end
+
+  def handle_event("update_message", %{"message" => msg}, socket) do
+    {:noreply, assign(socket, :message_text, msg)}
+  end
+
+  def handle_event("send_message", %{"message" => msg}, socket) when byte_size(msg) > 0 do
+    new_msg = %{
+      sender: "admin",
+      author: "Admin Verification Team",
+      time: Calendar.strftime(Time.utc_now(), "%I:%M %p"),
+      text: msg
+    }
+
+    {:noreply,
+     socket
+     |> update(:chat_messages, fn msgs -> msgs ++ [new_msg] end)
+     |> assign(:message_text, "")}
+  end
+
+  def handle_event("send_message", _params, socket), do: {:noreply, socket}
 
   @impl true
   def render(assigns) do
-    selected =
-      Enum.find(assigns.landlords, &(&1.id == assigns.selected_landlord_id)) ||
-        hd(assigns.landlords)
-
-    current_chat = Map.get(assigns.chat_messages, selected.id, [])
-
-    theme_bg =
-      if assigns.theme == "dark",
-        do: "bg-[#0A0B14] text-slate-100",
-        else: "bg-[#F8FAFC] text-slate-900"
-
-    sidebar_bg =
-      if assigns.theme == "dark",
-        do: "bg-[#0F101D] border-slate-800/80",
-        else: "bg-white border-slate-200 shadow-sm"
-
-    panel_bg = if assigns.theme == "dark", do: "bg-[#121324]", else: "bg-white"
-
-    card_bg =
-      if assigns.theme == "dark",
-        do: "bg-[#16182E] border-slate-800",
-        else: "bg-white border-slate-200 shadow-sm"
-
-    sub_card_bg =
-      if assigns.theme == "dark",
-        do: "bg-[#1B1D36] border-slate-700/50",
-        else: "bg-slate-50 border-slate-200"
-
-    border_col = if assigns.theme == "dark", do: "border-slate-800", else: "border-slate-200"
-    text_muted = if assigns.theme == "dark", do: "text-slate-400", else: "text-slate-500"
-
-    assigns =
-      assigns
-      |> assign(:landlord, selected)
-      |> assign(:current_chat, current_chat)
-      |> assign(:theme_bg, theme_bg)
-      |> assign(:sidebar_bg, sidebar_bg)
-      |> assign(:panel_bg, panel_bg)
-      |> assign(:card_bg, card_bg)
-      |> assign(:sub_card_bg, sub_card_bg)
-      |> assign(:border_col, border_col)
-      |> assign(:text_muted, text_muted)
-
     ~H"""
-    <div class={[
-      "h-screen w-full flex font-sans overflow-hidden transition-colors duration-200",
-      @theme_bg
-    ]}>
-      <%!-- LEFT SIDEBAR NAVIGATION --%>
-      <aside class={[
-        "w-56 md:w-60 flex-shrink-0 border-r flex flex-col justify-between p-4 z-20 hidden md:flex",
-        @sidebar_bg
-      ]}>
-        <div class="space-y-6">
-          <div class="flex items-center gap-3 px-1">
-            <div class="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center font-bold text-white text-xs shadow-md shadow-indigo-600/30">
-              L
-            </div>
-            <div>
-              <h1 class="text-xs font-bold leading-none tracking-tight">Operations Panel</h1>
-              <span class={["text-[10px] block mt-0.5", @text_muted]}>henry masita</span>
-            </div>
-          </div>
+    <Layouts.app flash={@flash} current_scope={@current_scope}>
+      <section
+        id="admin-landlord-verification"
+        phx-hook="HouseFinder"
+        class={[
+          "fixed inset-0 z-40 flex overflow-hidden transition-colors duration-200",
+          @theme == "dark" && "bg-[#0b1220] text-slate-100",
+          @theme == "light" && "bg-[#f8fafc] text-slate-900"
+        ]}
+      >
+        <%!-- Mobile Sidebar Overlay Backdrop --%>
+        <div
+          :if={@sidebar_open}
+          class="fixed inset-0 z-40 bg-slate-900/60 backdrop-blur-sm lg:hidden"
+          phx-click="toggle_sidebar"
+        ></div>
 
-          <nav class="space-y-1">
-            <a
-              href="#"
-              class={[
-                "flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-medium transition hover:bg-indigo-500/10 hover:text-indigo-400",
-                @text_muted
-              ]}
-            >
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="2"
-                  d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"
-                />
-              </svg>
-              Overview
-            </a>
-            <a
-              href="#"
-              class={[
-                "flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-medium transition hover:bg-indigo-500/10 hover:text-indigo-400",
-                @text_muted
-              ]}
-            >
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="2"
-                  d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
-                />
-              </svg>
-              Landlords
-            </a>
-            <a
-              href="#"
-              class="flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-bold bg-indigo-600 text-white shadow-md shadow-indigo-600/30"
-            >
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="2"
-                  d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-                />
-              </svg>
-              Onboarding
-            </a>
-            <a
-              href="#"
-              class={[
-                "flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-medium transition hover:bg-indigo-500/10 hover:text-indigo-400",
-                @text_muted
-              ]}
-            >
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="2"
-                  d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
-                />
-              </svg>
-              Settings
-            </a>
-          </nav>
-        </div>
-
-        <div class={["border-t pt-4 space-y-3", @border_col]}>
-          <div class="flex items-center justify-between text-xs font-medium">
-            <span class={@text_muted}>Appearance</span>
-            <button
-              phx-click="toggle_theme"
-              class="p-1.5 rounded-lg border transition hover:scale-105 flex items-center gap-1.5"
-            >
-              <%= if @theme == "dark" do %>
-                <svg class="w-4 h-4 text-amber-400" fill="currentColor" viewBox="0 0 20 20">
-                  <path
-                    fill-rule="evenodd"
-                    d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 100 2h1z"
-                    clip-rule="evenodd"
-                  />
-                </svg>
-                <span class="text-[10px] font-bold text-amber-400">Light</span>
-              <% else %>
-                <svg class="w-4 h-4 text-indigo-600" fill="currentColor" viewBox="0 0 20 20">
-                  <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" />
-                </svg>
-                <span class="text-[10px] font-bold text-indigo-600">Dark</span>
-              <% end %>
-            </button>
-          </div>
-          <button class="text-xs font-bold text-rose-400 hover:text-rose-300 block w-full text-left">
-            Log out
-          </button>
-        </div>
-      </aside>
-
-      <%!-- MAIN CONTENT AREA --%>
-      <div class="flex-1 flex flex-col overflow-hidden">
-        <%!-- TOP BAR --%>
-        <header class={[
-          "h-14 border-b flex items-center justify-between px-4 lg:px-6 flex-shrink-0 z-10",
-          @panel_bg,
-          @border_col
-        ]}>
-          <div class="flex items-center gap-3">
-            <div class="w-7 h-7 rounded-lg bg-indigo-600 flex items-center justify-center font-bold text-white text-xs shadow-md shadow-indigo-600/30 md:hidden">
-              L
-            </div>
-            <div>
-              <h1 class="text-xs font-bold leading-none">Onboarding Details</h1>
-              <span class={["text-[10px] hidden sm:inline-block", @text_muted]}>
-                Inspect collected landlord registration information
-              </span>
-            </div>
-          </div>
-
-          <div class="flex items-center gap-3">
-            <div class="flex md:hidden bg-slate-800/40 p-1 rounded-lg text-xs font-semibold">
-              <button
-                phx-click="switch_mobile_tab"
-                phx-value-tab="queue"
-                class={[
-                  "px-2.5 py-1 rounded-md text-[11px]",
-                  if(@mobile_tab == "queue",
-                    do: "bg-indigo-600 text-white font-bold",
-                    else: @text_muted
-                  )
-                ]}
-              >
-                Queue ({length(@landlords)})
-              </button>
-              <button
-                phx-click="switch_mobile_tab"
-                phx-value-tab="documents"
-                class={[
-                  "px-2.5 py-1 rounded-md text-[11px]",
-                  if(@mobile_tab == "documents",
-                    do: "bg-indigo-600 text-white font-bold",
-                    else: @text_muted
-                  )
-                ]}
-              >
-                Details
-              </button>
-            </div>
-
-            <button
-              phx-click="toggle_theme"
-              class={[
-                "p-2 rounded-xl border transition flex items-center justify-center",
-                @border_col,
-                if(@theme == "dark",
-                  do: "bg-[#181A35] hover:bg-[#202347]",
-                  else: "bg-slate-100 hover:bg-slate-200"
-                )
-              ]}
-            >
-              <%= if @theme == "dark" do %>
-                <svg class="w-4 h-4 text-amber-400" fill="currentColor" viewBox="0 0 20 20">
-                  <path
-                    fill-rule="evenodd"
-                    d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 100 2h1z"
-                    clip-rule="evenodd"
-                  />
-                </svg>
-              <% else %>
-                <svg class="w-4 h-4 text-indigo-600" fill="currentColor" viewBox="0 0 20 20">
-                  <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" />
-                </svg>
-              <% end %>
-            </button>
-          </div>
-        </header>
-
-        <%!-- WORKSPACE --%>
-        <div class="flex-1 flex flex-col md:flex-row overflow-hidden">
-          <%!-- LEFT COLUMN: LANDLORD QUEUE --%>
-          <aside class={[
-            "w-full md:w-72 lg:w-80 border-r flex flex-col flex-shrink-0 overflow-hidden transition-all",
-            @panel_bg,
-            @border_col,
-            if(@mobile_tab == "queue", do: "flex", else: "hidden md:flex")
+        <%!-- Collapsible Sidebar (Left) --%>
+        <aside
+          class={[
+            "fixed inset-y-0 left-0 z-50 flex w-80 flex-col border-r transition-transform duration-300 lg:static lg:translate-x-0",
+            !@sidebar_open && "-translate-x-full lg:translate-x-0",
+            @theme == "dark" && "border-slate-800 bg-[#0e1626]",
+            @theme == "light" && "border-slate-200 bg-white"
+          ]}
+        >
+          <%!-- Sidebar Header & Search Bar --%>
+          <div class={[
+            "flex flex-col gap-3 border-b p-4",
+            @theme == "dark" && "border-slate-800 bg-[#131d31]",
+            @theme == "light" && "border-slate-200 bg-slate-50"
           ]}>
-            <div class={[
-              "p-3.5 border-b flex-shrink-0 flex items-center justify-between",
-              @border_col
-            ]}>
-              <div>
-                <h2 class="text-xs font-bold uppercase tracking-wider text-indigo-400">
-                  Landlord Queue
-                </h2>
-                <p class={["text-[11px] mt-0.5", @text_muted]}>Select landlord to inspect details</p>
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <div class="flex size-8 items-center justify-center rounded-lg bg-blue-600/10 text-blue-600">
+                  <.icon name="hero-user-group" class="size-5" />
+                </div>
+                <div>
+                  <h2 class={[
+                    "text-sm font-bold tracking-tight",
+                    @theme == "dark" && "text-white",
+                    @theme == "light" && "text-slate-900"
+                  ]}>Landlords Pending</h2>
+                  <p class="text-[10px] text-slate-500">{length(filtered_landlords(@landlords, @search_query))} Applications</p>
+                </div>
               </div>
-              <span class={["text-xs px-2 py-0.5 rounded-lg font-bold", @sub_card_bg, @text_muted]}>
-                {length(@landlords)} Total
-              </span>
+              <button
+                type="button"
+                class="rounded-lg p-1.5 text-slate-500 hover:bg-slate-200 lg:hidden"
+                phx-click="toggle_sidebar"
+              >
+                <.icon name="hero-x-mark" class="size-5" />
+              </button>
             </div>
 
-            <div class="flex-1 overflow-y-auto p-3 space-y-2">
-              <%= for l <- @landlords do %>
-                <div
-                  phx-click="select_landlord"
-                  phx-value-id={l.id}
-                  class={[
-                    "p-3 rounded-xl border cursor-pointer transition flex items-center justify-between",
-                    if(@selected_landlord_id == l.id,
-                      do: "bg-indigo-600/15 border-indigo-500 text-indigo-300 shadow-sm",
-                      else: "border-slate-800 hover:border-indigo-500/30"
-                    )
-                  ]}
-                >
-                  <div>
-                    <div class="flex items-center gap-2">
-                      <span class="text-xs font-bold">{l.full_name}</span>
-                      <%= if @selected_landlord_id == l.id do %>
-                        <span class="text-[9px] text-indigo-300 bg-indigo-600/30 px-1.5 py-0.2 rounded font-mono">
-                          ACTIVE
-                        </span>
-                      <% end %>
-                    </div>
-                    <div class={["text-[11px] font-mono mt-0.5", @text_muted]}>
-                      ID: {l.id_number}
-                    </div>
-                  </div>
+            <%!-- Search Input --%>
+            <form phx-change="search_landlords" phx-submit="search_landlords" class="relative">
+              <input
+                type="text"
+                name="search"
+                value={@search_query}
+                placeholder="Search landlord name, email..."
+                class={[
+                  "w-full rounded-xl border py-2 pl-9 pr-3 text-xs focus:border-blue-600 focus:outline-none",
+                  @theme == "dark" && "border-slate-700 bg-[#090d16] text-white placeholder-slate-500",
+                  @theme == "light" && "border-slate-300 bg-white text-slate-900 placeholder-slate-400"
+                ]}
+              />
+              <.icon name="hero-magnifying-glass" class="absolute left-3 top-2.5 size-4 text-slate-400" />
+            </form>
+          </div>
 
-                  <div>
-                    <%= case l.status do %>
-                      <% "approved" -> %>
-                        <span class="text-[10px] text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20 font-bold">
-                          Approved
-                        </span>
-                      <% "rejected" -> %>
-                        <span class="text-[10px] text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded-full border border-rose-500/20 font-bold">
-                          Rejected
-                        </span>
-                      <% _ -> %>
-                        <span class="text-[10px] text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20 font-bold">
-                          Pending
-                        </span>
-                    <% end %>
+          <%!-- Landlords Scrollable List --%>
+          <div class="flex-1 space-y-1.5 overflow-y-auto p-3">
+            <%= if Enum.empty?(filtered_landlords(@landlords, @search_query)) do %>
+              <div class="p-4 text-center text-xs text-slate-400">
+                No landlords matching request.
+              </div>
+            <% else %>
+              <button
+                :for={landlord <- filtered_landlords(@landlords, @search_query)}
+                type="button"
+                phx-click="select_landlord"
+                phx-value-id={landlord.id}
+                class={[
+                  "flex w-full flex-col gap-1 rounded-xl border p-3 text-left transition",
+                  @selected_landlord && @selected_landlord.id == landlord.id && "border-blue-600 bg-blue-600/10 shadow-sm",
+                  (@selected_landlord == nil or @selected_landlord.id != landlord.id) && @theme == "dark" && "border-slate-800 bg-[#090d16] hover:bg-slate-800/50",
+                  (@selected_landlord == nil or @selected_landlord.id != landlord.id) && @theme == "light" && "border-slate-200 bg-slate-50 hover:bg-slate-100"
+                ]}
+              >
+                <div class="flex items-center justify-between">
+                  <span class={[
+                    "font-bold text-xs truncate",
+                    @theme == "dark" && "text-slate-100",
+                    @theme == "light" && "text-slate-800"
+                  ]}>
+                    {landlord.names || "Unnamed Landlord"}
+                  </span>
+                  <span class="rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-amber-500">
+                    Pending
+                  </span>
+                </div>
+                <p class="text-[11px] text-slate-400 truncate">{landlord.email || "No email provided"}</p>
+                <div class="mt-1 flex items-center justify-between text-[10px] text-slate-500">
+                  <span>{landlord.property_name || "Property Pending"}</span>
+                  <span>{length(landlord.documents || [])} Docs</span>
+                </div>
+              </button>
+            <% end %>
+          </div>
+        </aside>
+
+        <%!-- Main Verification Panel (Right Container) --%>
+        <div class="flex flex-1 flex-col overflow-y-auto">
+          <div class="mx-auto flex w-full max-w-5xl flex-col px-4 py-6 sm:px-6 lg:px-8">
+
+            <%!-- Top Action Bar --%>
+            <div class="flex items-center justify-between pb-4">
+              <button
+                type="button"
+                phx-click="toggle_sidebar"
+                class={[
+                  "flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold lg:hidden",
+                  @theme == "dark" && "border-slate-800 bg-[#0e1626] text-slate-200",
+                  @theme == "light" && "border-slate-200 bg-white text-slate-700 shadow-sm"
+                ]}
+              >
+                <.icon name="hero-bars-3" class="size-4" />
+                <span>Select Landlord</span>
+              </button>
+
+              <div class="ml-auto flex items-center gap-3">
+                <button
+                  type="button"
+                  phx-click="toggle_theme"
+                  class={[
+                    "flex size-10 items-center justify-center rounded-full border transition active:scale-95",
+                    @theme == "dark" && "border-slate-700 bg-[#0e1626] text-amber-400 hover:bg-slate-800",
+                    @theme == "light" && "border-slate-300 bg-white text-slate-700 shadow-sm hover:bg-slate-100"
+                  ]}
+                  title={"Switch to #{if @theme == "dark", do: "Light", else: "Dark"} mode"}
+                >
+                  <%= if @theme == "dark" do %>
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-6">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v2.25m6.364.386-1.591 1.591M21 12h-2.25m-.386 6.364-1.591-1.591M12 18.75V21m-4.773-4.227-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0Z" />
+                    </svg>
+                  <% else %>
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-6">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M21.752 15.002A9.72 9.72 0 0 1 18 15.75c-5.385 0-9.75-4.365-9.75-9.75c0-1.33.266-2.597.748-3.752A9.753 9.753 0 0 0 3 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 0 0 9.002-5.998Z" />
+                    </svg>
+                  <% end %>
+                </button>
+              </div>
+            </div>
+
+            <%= if @selected_landlord == nil do %>
+              <div class="flex flex-1 flex-col items-center justify-center rounded-2xl border p-12 text-center">
+                <.icon name="hero-user-circle" class="size-16 text-slate-400" />
+                <h3 class="mt-4 text-base font-bold">No Landlord Selected</h3>
+                <p class="text-xs text-slate-500">Select an applicant from the sidebar to start reviewing their details.</p>
+              </div>
+            <% else %>
+              <% steps = build_verification_steps(@selected_landlord, @approved_sections) %>
+              <% completed_steps_count = Enum.count(steps, & &1.completed?) %>
+              <% total_steps_count = length(steps) %>
+              <% progress_percentage = if total_steps_count > 0, do: round((completed_steps_count / total_steps_count) * 100), else: 0 %>
+
+              <%!-- Top Centered Branding & Header Content --%>
+              <header class={[
+                "relative flex flex-col items-center justify-center border-b pb-6 text-center",
+                @theme == "dark" && "border-slate-800",
+                @theme == "light" && "border-slate-200"
+              ]}>
+                <div class="mb-4 flex items-center justify-end gap-3 sm:absolute sm:right-0 sm:top-0 sm:mb-0">
+                  <div class="text-right">
+                    <p class={[
+                      "text-[10px] font-semibold uppercase tracking-wider",
+                      @theme == "dark" && "text-slate-400",
+                      @theme == "light" && "text-slate-500"
+                    ]}>
+                      Progress
+                    </p>
+                    <p class="text-lg font-bold text-emerald-500">{progress_percentage}%</p>
                   </div>
                 </div>
-              <% end %>
-            </div>
-          </aside>
 
-          <%!-- RIGHT COLUMN: DYNAMIC 4-STEP INLINE DISPLAY --%>
-          <main class={[
-            "flex-1 flex flex-col overflow-hidden",
-            if(@mobile_tab == "documents", do: "flex", else: "hidden md:flex")
-          ]}>
-            <%!-- TOP STEP TABS (CLEANER, NON-COMPRESSED MOBILE SCROLLING) --%>
-            <div class={[
-              "px-3 py-2.5 border-b flex items-center justify-between gap-2 flex-shrink-0",
-              @panel_bg,
-              @border_col
-            ]}>
-              <div class="flex items-center gap-2 overflow-x-auto w-full scrollbar-none py-0.5">
-                <%= for {num, title} <- [{1, "Personal Details"}, {2, "Identity Docs"}, {3, "Property Info"}, {4, "Payout Info"}] do %>
+                <h1 class={[
+                  "text-3xl font-extrabold tracking-tight sm:text-4xl md:text-5xl",
+                  @theme == "dark" && "text-white",
+                  @theme == "light" && "text-slate-900"
+                ]}>
+                  Home Admin
+                </h1>
+
+                <%!-- Dynamic Greeting & Subtitle --%>
+                <div class="mt-2 space-y-1">
+                  <h2 class={[
+                    "text-lg font-bold sm:text-xl md:text-2xl",
+                    @theme == "dark" && "text-slate-100",
+                    @theme == "light" && "text-slate-800"
+                  ]}>
+                    Reviewing: {first_name(@selected_landlord) || "Landlord"} ({detail(@selected_landlord, :names)})
+                  </h2>
+                  <p class={[
+                    "text-xs sm:text-sm",
+                    @theme == "dark" && "text-slate-400",
+                    @theme == "light" && "text-slate-600"
+                  ]}>
+                    Submitted documents ready for audit.<br> ⚠️Verify all official documents before approving access.
+                  </p>
+                </div>
+
+                <%!-- Progress Badge Banner --%>
+                <div class={[
+                  "mt-6 flex w-full max-w-md items-center justify-between gap-4 rounded-2xl border p-4 shadow-sm",
+                  @theme == "dark" && "border-slate-800 bg-[#0e1626]",
+                  @theme == "light" && "border-slate-200 bg-white"
+                ]}>
+                  <div class="flex size-12 shrink-0 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-500">
+                    <.icon name="hero-shield-check" class="size-7" />
+                  </div>
+                  <div class="flex-1 text-left">
+                    <div class="flex items-center justify-between gap-3">
+                      <p class="text-xs font-semibold uppercase tracking-wider text-emerald-500">
+                        Overall Progress
+                      </p>
+                      <span class="text-sm font-bold text-emerald-500">{progress_percentage}%</span>
+                    </div>
+                    <p class={[
+                      "mt-0.5 text-xs font-medium sm:text-sm",
+                      @theme == "dark" && "text-slate-300",
+                      @theme == "light" && "text-slate-700"
+                    ]}>
+                      {completed_steps_count} of {total_steps_count} Steps Verified
+                    </p>
+                    <div class={[
+                      "mt-2 h-2 w-full overflow-hidden rounded-full",
+                      @theme == "dark" && "bg-slate-800",
+                      @theme == "light" && "bg-slate-100"
+                    ]}>
+                      <div
+                        class="h-full rounded-full bg-blue-600 transition-all duration-500"
+                        style={"width: #{progress_percentage}%"}
+                      >
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </header>
+
+              <%!-- Verification Step Tabs --%>
+              <div class="mt-8">
+                <div class="flex items-center justify-between pb-2">
+                  <h3 class={[
+                    "text-xs font-semibold uppercase tracking-wider",
+                    @theme == "dark" && "text-slate-400",
+                    @theme == "light" && "text-slate-500"
+                  ]}>
+                    Verification Steps
+                  </h3>
+                  <span class={[
+                    "text-xs",
+                    @theme == "dark" && "text-slate-500",
+                    @theme == "light" && "text-slate-400"
+                  ]}>Select step to view details</span>
+                </div>
+
+                <div class="no-scrollbar flex gap-2 overflow-x-auto pb-2">
                   <button
-                    phx-click="select_step"
-                    phx-value-step={num}
+                    :for={step <- steps}
+                    type="button"
+                    phx-click="select_tab"
+                    phx-value-tab={to_string(step.number)}
                     class={[
-                      "flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold transition cursor-pointer flex-shrink-0 whitespace-nowrap",
-                      if(@active_step == num,
-                        do:
-                          "bg-indigo-600 border-indigo-500 text-white shadow-sm shadow-indigo-600/30 font-bold",
-                        else:
-                          "border border-slate-800 bg-slate-800/40 hover:bg-slate-800 text-slate-300"
-                      )
+                      "flex shrink-0 items-center gap-2.5 rounded-xl border px-4 py-2.5 text-xs font-semibold transition",
+                      @active_tab == to_string(step.number) && "border-blue-600 bg-blue-600 text-white shadow-md",
+                      @active_tab != to_string(step.number) && step.completed? && @theme == "dark" && "border-emerald-500/40 bg-[#0e1626] text-emerald-400 hover:bg-slate-800",
+                      @active_tab != to_string(step.number) && step.completed? && @theme == "light" && "border-emerald-500/40 bg-white text-emerald-600 hover:bg-slate-50",
+                      @active_tab != to_string(step.number) && !step.completed? && @theme == "dark" && "border-slate-800 bg-[#0e1626] text-slate-400 hover:bg-slate-800",
+                      @active_tab != to_string(step.number) && !step.completed? && @theme == "light" && "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
                     ]}
                   >
                     <span class={[
-                      "w-4 h-4 rounded-full text-[10px] font-bold flex items-center justify-center flex-shrink-0",
-                      if(@active_step == num,
-                        do: "bg-white text-indigo-700",
-                        else: "bg-indigo-500/30 text-indigo-300"
-                      )
+                      "flex size-5 items-center justify-center rounded-full text-[10px] font-bold",
+                      step.completed? && "bg-emerald-500 text-white",
+                      !step.completed? && @theme == "dark" && "bg-slate-800 text-slate-300",
+                      !step.completed? && @theme == "light" && "bg-slate-200 text-slate-700"
                     ]}>
-                      {num}
+                      {if step.completed?, do: "✓", else: step.number}
                     </span>
-                    <span>{title}</span>
+                    <span>{step.number}. {step.title}</span>
                   </button>
-                <% end %>
+                </div>
               </div>
 
-              <div class="text-[11px] font-medium text-indigo-400 hidden lg:block whitespace-nowrap pl-2">
-                Landlord: <strong class="text-slate-200">{@landlord.full_name}</strong>
-              </div>
-            </div>
+              <%!-- Step-by-Step Sections --%>
+              <main class="mt-6 flex-1 space-y-6 pb-28">
 
-            <%!-- STEP CONTENT BODY (RENDERED INLINE BELOW STEPS) --%>
-            <div class="flex-1 overflow-y-auto p-3.5 sm:p-5 space-y-4">
-              <%!-- STEP 1: PERSONAL DETAILS --%>
-              <%= if @active_step == 1 do %>
-                <div class="space-y-4">
-                  <div class="flex items-center justify-between">
-                    <div>
-                      <h2 class="text-xs font-bold uppercase tracking-wider text-indigo-400">
-                        Personal Details
-                      </h2>
-                      <p class={["text-[11px]", @text_muted]}>
-                        Primary contact and residence information
-                      </p>
-                    </div>
-                    <span class="text-[10px] text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded font-bold border border-emerald-500/20">
-                      Step 1 of 4
-                    </span>
-                  </div>
-
-                  <div class={[
-                    "p-4 sm:p-5 rounded-2xl border space-y-4 shadow-sm",
-                    @card_bg,
-                    @border_col
-                  ]}>
-                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 text-xs">
-                      <div class={["p-3.5 rounded-xl border", @sub_card_bg, @border_col]}>
-                        <span class={["text-[10px] block uppercase font-mono mb-1", @text_muted]}>
-                          Category
-                        </span>
-                        <strong class="text-sm">{@landlord.category}</strong>
-                      </div>
-
-                      <div class={["p-3.5 rounded-xl border", @sub_card_bg, @border_col]}>
-                        <span class={["text-[10px] block uppercase font-mono mb-1", @text_muted]}>
-                          Full Name
-                        </span>
-                        <strong class="text-sm text-indigo-300">{@landlord.full_name}</strong>
-                      </div>
-
-                      <div class={["p-3.5 rounded-xl border", @sub_card_bg, @border_col]}>
-                        <span class={["text-[10px] block uppercase font-mono mb-1", @text_muted]}>
-                          Email Address
-                        </span>
-                        <strong class="text-sm font-mono break-all">{@landlord.email}</strong>
-                      </div>
-
-                      <div class={["p-3.5 rounded-xl border", @sub_card_bg, @border_col]}>
-                        <span class={["text-[10px] block uppercase font-mono mb-1", @text_muted]}>
-                          Phone Number
-                        </span>
-                        <strong class="text-sm font-mono">{@landlord.phone}</strong>
-                      </div>
-
-                      <div class={["p-3.5 rounded-xl border", @sub_card_bg, @border_col]}>
-                        <span class={["text-[10px] block uppercase font-mono mb-1", @text_muted]}>
-                          WhatsApp Contact
-                        </span>
-                        <strong class="text-sm font-mono">{@landlord.whatsapp}</strong>
-                      </div>
-
-                      <div class={["p-3.5 rounded-xl border", @sub_card_bg, @border_col]}>
-                        <span class={["text-[10px] block uppercase font-mono mb-1", @text_muted]}>
-                          Residence / Location
-                        </span>
-                        <strong class="text-sm">{@landlord.residence}</strong>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              <% end %>
-
-              <%!-- STEP 2: IDENTITY VERIFICATION --%>
-              <%= if @active_step == 2 do %>
-                <div class="space-y-4">
-                  <div class="flex items-center justify-between">
-                    <div>
-                      <h2 class="text-xs font-bold uppercase tracking-wider text-indigo-400">
-                        Identity Verification
-                      </h2>
-                      <p class={["text-[11px]", @text_muted]}>
-                        National ID card and KRA PIN documents
-                      </p>
-                    </div>
-                    <span class="text-[10px] text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded font-bold border border-emerald-500/20">
-                      Step 2 of 4
-                    </span>
-                  </div>
-
-                  <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <%= for doc <- @landlord.identity_docs do %>
-                      <div class={[
-                        "rounded-xl border overflow-hidden shadow-sm flex flex-col justify-between",
-                        @card_bg,
-                        @border_col
-                      ]}>
-                        <div class={[
-                          "px-3 py-2 border-b flex items-center justify-between",
-                          @panel_bg,
-                          @border_col
-                        ]}>
-                          <div>
-                            <h3 class="text-xs font-bold truncate">{doc.title}</h3>
-                            <span class="text-[10px] font-mono text-indigo-400">{doc.doc_no}</span>
-                          </div>
-                          <a
-                            href={doc.image_url}
-                            target="_blank"
-                            class="px-2 py-0.5 rounded text-[10px] font-semibold text-indigo-400 bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/20"
-                          >
-                            Open ↗
-                          </a>
-                        </div>
-
-                        <%!-- Compact Document Image View --%>
-                        <div class="p-3 flex items-center justify-center bg-black/30 h-40">
-                          <img
-                            src={doc.image_url}
-                            alt={doc.title}
-                            class="max-h-36 w-auto object-contain rounded-lg border border-slate-700/40 shadow-sm"
-                          />
-                        </div>
-
-                        <div class={[
-                          "px-3 py-2 border-t text-[11px] flex items-center justify-between gap-2",
-                          @border_col,
-                          @text_muted
-                        ]}>
-                          <span class="truncate">{doc.notes}</span>
-                          <button
-                            phx-click="open_chat"
-                            class="text-indigo-400 hover:underline text-[10px] font-semibold flex-shrink-0"
-                          >
-                            Flag Issue
-                          </button>
-                        </div>
-                      </div>
-                    <% end %>
-                  </div>
-                </div>
-              <% end %>
-
-              <%!-- STEP 3: PROPERTY DETAILS & OWNERSHIP DOCS --%>
-              <%= if @active_step == 3 do %>
-                <div class="space-y-4">
-                  <div class="flex items-center justify-between">
-                    <div>
-                      <h2 class="text-xs font-bold uppercase tracking-wider text-indigo-400">
-                        Property Details & Title
-                      </h2>
-                      <p class={["text-[11px]", @text_muted]}>
-                        Land parcel metadata and ownership proof
-                      </p>
-                    </div>
-                    <span class="text-[10px] text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded font-bold border border-emerald-500/20">
-                      Step 3 of 4
-                    </span>
-                  </div>
-
-                  <div class={[
-                    "p-4 sm:p-5 rounded-2xl border space-y-4 shadow-sm",
-                    @card_bg,
-                    @border_col
-                  ]}>
-                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 text-xs">
-                      <div class={["p-3.5 rounded-xl border", @sub_card_bg, @border_col]}>
-                        <span class={["text-[10px] block uppercase font-mono mb-1", @text_muted]}>
-                          Property Name
-                        </span>
-                        <strong class="text-sm font-bold text-indigo-300">
-                          {@landlord.property_name}
-                        </strong>
-                      </div>
-
-                      <div class={["p-3.5 rounded-xl border", @sub_card_bg, @border_col]}>
-                        <span class={["text-[10px] block uppercase font-mono mb-1", @text_muted]}>
-                          Intent / Category
-                        </span>
-                        <strong class="text-sm">{@landlord.intent}</strong>
-                      </div>
-
-                      <div class={["p-3.5 rounded-xl border", @sub_card_bg, @border_col]}>
-                        <span class={["text-[10px] block uppercase font-mono mb-1", @text_muted]}>
-                          Location
-                        </span>
-                        <strong class="text-sm">{@landlord.location}</strong>
-                      </div>
-
-                      <div class={["p-3.5 rounded-xl border", @sub_card_bg, @border_col]}>
-                        <span class={["text-[10px] block uppercase font-mono mb-1", @text_muted]}>
-                          Ownership Type
-                        </span>
-                        <strong class="text-sm">{@landlord.ownership_type}</strong>
-                      </div>
-
-                      <div class={["p-3.5 rounded-xl border", @sub_card_bg, @border_col]}>
-                        <span class={["text-[10px] block uppercase font-mono mb-1", @text_muted]}>
-                          Title / LR Number
-                        </span>
-                        <strong class="text-sm font-mono text-indigo-400">
-                          {@landlord.title_lr_no}
-                        </strong>
-                      </div>
-
-                      <div class={["p-3.5 rounded-xl border", @sub_card_bg, @border_col]}>
-                        <span class={["text-[10px] block uppercase font-mono mb-1", @text_muted]}>
-                          Total Units
-                        </span>
-                        <strong class="text-sm">{@landlord.total_units} Units</strong>
-                      </div>
-                    </div>
-                  </div>
-
-                  <%!-- Property Proof Document Cards --%>
-                  <%= if length(@landlord.property_docs) > 0 do %>
-                    <h3 class="text-xs font-bold mt-4">Ownership Proof Documents</h3>
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <%= for doc <- @landlord.property_docs do %>
-                        <div class={[
-                          "rounded-xl border overflow-hidden shadow-sm flex flex-col justify-between",
-                          @card_bg,
-                          @border_col
-                        ]}>
-                          <div class={[
-                            "px-3 py-2 border-b flex items-center justify-between",
-                            @panel_bg,
-                            @border_col
-                          ]}>
-                            <div>
-                              <h3 class="text-xs font-bold truncate">{doc.title}</h3>
-                              <span class="text-[10px] font-mono text-indigo-400">{doc.doc_no}</span>
-                            </div>
-                            <a
-                              href={doc.image_url}
-                              target="_blank"
-                              class="px-2 py-0.5 rounded text-[10px] font-semibold text-indigo-400 bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/20"
-                            >
-                              Open ↗
-                            </a>
-                          </div>
-
-                          <div class="p-3 flex items-center justify-center bg-black/30 h-40">
-                            <img
-                              src={doc.image_url}
-                              alt={doc.title}
-                              class="max-h-36 w-auto object-contain rounded-lg border border-slate-700/40 shadow-sm"
-                            />
-                          </div>
-
-                          <div class={[
-                            "px-3 py-2 border-t text-[11px] flex items-center justify-between gap-2",
-                            @border_col,
-                            @text_muted
-                          ]}>
-                            <span class="truncate">{doc.notes}</span>
-                            <button
-                              phx-click="open_chat"
-                              class="text-indigo-400 hover:underline text-[10px] font-semibold flex-shrink-0"
-                            >
-                              Flag Issue
-                            </button>
-                          </div>
-                        </div>
-                      <% end %>
-                    </div>
-                  <% end %>
-                </div>
-              <% end %>
-
-              <%!-- STEP 4: PAYOUT & BILLING DETAILS --%>
-              <%= if @active_step == 4 do %>
-                <div class="space-y-4">
-                  <div class="flex items-center justify-between">
-                    <div>
-                      <h2 class="text-xs font-bold uppercase tracking-wider text-indigo-400">
-                        Payout & Billing Details
-                      </h2>
-                      <p class={["text-[11px]", @text_muted]}>
-                        Configured payment collection and disbursement parameters
-                      </p>
-                    </div>
-                    <span class="text-[10px] text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded font-bold border border-emerald-500/20">
-                      Step 4 of 4
-                    </span>
-                  </div>
-
-                  <div class={[
-                    "p-4 sm:p-5 rounded-2xl border space-y-4 shadow-sm",
-                    @card_bg,
-                    @border_col
-                  ]}>
-                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-                      <div class={["p-4 rounded-xl border", @sub_card_bg, @border_col]}>
-                        <span class={["text-[10px] block uppercase font-mono mb-1", @text_muted]}>
-                          Billing Method
-                        </span>
-                        <strong class="text-base text-indigo-300">{@landlord.billing_method}</strong>
-                      </div>
-
-                      <div class={["p-4 rounded-xl border", @sub_card_bg, @border_col]}>
-                        <span class={["text-[10px] block uppercase font-mono mb-1", @text_muted]}>
-                          M-Pesa / Billing Phone
-                        </span>
-                        <strong class="text-base font-mono">{@landlord.billing_phone}</strong>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              <% end %>
-            </div>
-
-            <%!-- BOTTOM ACTION BAR --%>
-            <div class={[
-              "p-3.5 border-t flex flex-col sm:flex-row items-center justify-between gap-3 flex-shrink-0",
-              @panel_bg,
-              @border_col
-            ]}>
-              <div>
-                <h4 class="text-xs font-bold">Verification Actions</h4>
-                <p class={["text-[11px]", @text_muted]}>
-                  Approve or query landlord submitted details
-                </p>
-              </div>
-
-              <div class="flex items-center gap-2 w-full sm:w-auto">
-                <button
-                  phx-click="open_chat"
-                  class="flex-1 sm:flex-initial px-4 py-2 rounded-xl text-xs font-bold text-amber-300 bg-amber-500/10 border border-amber-500/20 hover:bg-amber-500/20 transition flex items-center justify-center gap-1.5"
+                <%!-- Step 1: Personal Details --%>
+                <div
+                  :if={@active_tab == "1"}
+                  class={[
+                    "rounded-2xl border p-5 transition-all sm:p-6",
+                    @theme == "dark" && "border-slate-800 bg-[#0e1626] shadow-xl",
+                    @theme == "light" && "border-slate-200 bg-white shadow-sm"
+                  ]}
                 >
-                  💬 Text Landlord
-                </button>
+                  <div class={[
+                    "flex items-center justify-between border-b pb-3",
+                    @theme == "dark" && "border-slate-800",
+                    @theme == "light" && "border-slate-200"
+                  ]}>
+                    <div class="flex items-center gap-2.5">
+                      <h3 class={[
+                        "text-lg font-bold",
+                        @theme == "dark" && "text-white",
+                        @theme == "light" && "text-slate-900"
+                      ]}>Personal details</h3>
+                      <span :if={Enum.at(steps, 0).completed?} class="flex items-center text-emerald-500">
+                        <.icon name="hero-check-circle-solid" class="size-5" />
+                      </span>
+                    </div>
+                  </div>
 
-                <%= if @landlord.status != "approved" do %>
+                  <div class="mt-4 grid grid-cols-1 gap-y-3.5 gap-x-8 text-sm sm:grid-cols-2">
+                    <div class={[
+                      "flex flex-col sm:flex-row sm:justify-between sm:border-b sm:pb-2",
+                      @theme == "dark" && "sm:border-slate-800/60",
+                      @theme == "light" && "sm:border-slate-100"
+                    ]}>
+                      <span class={if @theme == "dark", do: "text-slate-400", else: "text-slate-500"}>Category:</span>
+                      <span class={[
+                        "font-medium capitalize",
+                        @theme == "dark" && "text-slate-100",
+                        @theme == "light" && "text-slate-900"
+                      ]}>{detail(@selected_landlord, :entity_type)}</span>
+                    </div>
+                    <div class={[
+                      "flex flex-col sm:flex-row sm:justify-between sm:border-b sm:pb-2",
+                      @theme == "dark" && "sm:border-slate-800/60",
+                      @theme == "light" && "sm:border-slate-100"
+                    ]}>
+                      <span class={if @theme == "dark", do: "text-slate-400", else: "text-slate-500"}>Name:</span>
+                      <span class={[
+                        "font-medium",
+                        @theme == "dark" && "text-slate-100",
+                        @theme == "light" && "text-slate-900"
+                      ]}>{detail(@selected_landlord, :names)}</span>
+                    </div>
+                    <div class={[
+                      "flex flex-col sm:flex-row sm:justify-between sm:border-b sm:pb-2",
+                      @theme == "dark" && "sm:border-slate-800/60",
+                      @theme == "light" && "sm:border-slate-100"
+                    ]}>
+                      <span class={if @theme == "dark", do: "text-slate-400", else: "text-slate-500"}>Email:</span>
+                      <span class={[
+                        "break-all font-medium",
+                        @theme == "dark" && "text-slate-100",
+                        @theme == "light" && "text-slate-900"
+                      ]}>{detail(@selected_landlord, :email)}</span>
+                    </div>
+                    <div class={[
+                      "flex flex-col sm:flex-row sm:justify-between sm:border-b sm:pb-2",
+                      @theme == "dark" && "sm:border-slate-800/60",
+                      @theme == "light" && "sm:border-slate-100"
+                    ]}>
+                      <span class={if @theme == "dark", do: "text-slate-400", else: "text-slate-500"}>Phone:</span>
+                      <span class={[
+                        "font-medium",
+                        @theme == "dark" && "text-slate-100",
+                        @theme == "light" && "text-slate-900"
+                      ]}>{detail(@selected_landlord, :phone)}</span>
+                    </div>
+                    <div class="flex flex-col sm:flex-row sm:justify-between">
+                      <span class={if @theme == "dark", do: "text-slate-400", else: "text-slate-500"}>WhatsApp:</span>
+                      <span class={[
+                        "font-medium",
+                        @theme == "dark" && "text-slate-100",
+                        @theme == "light" && "text-slate-900"
+                      ]}>{detail(@selected_landlord, :whatsapp_phone)}</span>
+                    </div>
+                    <div class="flex flex-col sm:flex-row sm:justify-between">
+                      <span class={if @theme == "dark", do: "text-slate-400", else: "text-slate-500"}>Residence:</span>
+                      <span class={[
+                        "font-medium",
+                        @theme == "dark" && "text-slate-100",
+                        @theme == "light" && "text-slate-900"
+                      ]}>{detail(@selected_landlord, :residence_location)}</span>
+                    </div>
+                  </div>
+
+                  <%!-- Section Review Action Controls --%>
+                  <.section_action_bar section="Personal Details" theme={@theme} />
+                </div>
+
+                <%!-- Step 2: Identity Verification & Uploads --%>
+                <div
+                  :if={@active_tab == "2"}
+                  class={[
+                    "rounded-2xl border p-5 transition-all sm:p-6",
+                    @theme == "dark" && "border-slate-800 bg-[#0e1626] shadow-xl",
+                    @theme == "light" && "border-slate-200 bg-white shadow-sm"
+                  ]}
+                >
+                  <div class={[
+                    "flex items-center justify-between border-b pb-3",
+                    @theme == "dark" && "border-slate-800",
+                    @theme == "light" && "border-slate-200"
+                  ]}>
+                    <div class="flex items-center gap-2.5">
+                      <h3 class={[
+                        "text-lg font-bold",
+                        @theme == "dark" && "text-white",
+                        @theme == "light" && "text-slate-900"
+                      ]}>Identity verification</h3>
+                      <span :if={Enum.at(steps, 1).completed?} class="flex items-center text-emerald-500">
+                        <.icon name="hero-check-circle-solid" class="size-5" />
+                      </span>
+                    </div>
+                  </div>
+
+                  <div class="mt-4 grid grid-cols-1 gap-y-3.5 gap-x-8 text-sm sm:grid-cols-2">
+                    <div class={[
+                      "flex flex-col sm:flex-row sm:justify-between sm:border-b sm:pb-2",
+                      @theme == "dark" && "sm:border-slate-800/60",
+                      @theme == "light" && "sm:border-slate-100"
+                    ]}>
+                      <span class={if @theme == "dark", do: "text-slate-400", else: "text-slate-500"}>Doc type:</span>
+                      <span class={[
+                        "font-medium",
+                        @theme == "dark" && "text-slate-100",
+                        @theme == "light" && "text-slate-900"
+                      ]}>{detail(@selected_landlord, :id_type)}</span>
+                    </div>
+                    <div class={[
+                      "flex flex-col sm:flex-row sm:justify-between sm:border-b sm:pb-2",
+                      @theme == "dark" && "sm:border-slate-800/60",
+                      @theme == "light" && "sm:border-slate-100"
+                    ]}>
+                      <span class={if @theme == "dark", do: "text-slate-400", else: "text-slate-500"}>Doc / ID no:</span>
+                      <span class={[
+                        "font-medium",
+                        @theme == "dark" && "text-slate-100",
+                        @theme == "light" && "text-slate-900"
+                      ]}>{detail(@selected_landlord, :id_number)}</span>
+                    </div>
+                    <div class="flex flex-col sm:flex-row sm:justify-between">
+                      <span class={if @theme == "dark", do: "text-slate-400", else: "text-slate-500"}>KRA PIN:</span>
+                      <span class={[
+                        "font-medium uppercase",
+                        @theme == "dark" && "text-slate-100",
+                        @theme == "light" && "text-slate-900"
+                      ]}>{detail(@selected_landlord, :kra_pin)}</span>
+                    </div>
+                    <div class="flex flex-col sm:flex-row sm:justify-between">
+                      <span class={if @theme == "dark", do: "text-slate-400", else: "text-slate-500"}>Uploads status:</span>
+                      <span class="font-medium text-emerald-500">
+                        {if has_doc?(@selected_landlord, "id_front") or has_value?(@selected_landlord, :id_front_url), do: "Front attached, ", else: ""}
+                        {if has_doc?(@selected_landlord, "id_back") or has_value?(@selected_landlord, :id_back_url), do: "Back attached", else: "Pending uploads"}
+                      </span>
+                    </div>
+                  </div>
+
+                  <%!-- Identity Document Image Previews --%>
+                  <div class={[
+                    "mt-6 border-t pt-4",
+                    @theme == "dark" && "border-slate-800",
+                    @theme == "light" && "border-slate-200"
+                  ]}>
+                    <h4 class={[
+                      "mb-3 text-xs font-semibold uppercase tracking-wider",
+                      @theme == "dark" && "text-slate-400",
+                      @theme == "light" && "text-slate-500"
+                    ]}>
+                      Uploaded Identity Pictures
+                    </h4>
+                    <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                      <.doc_card
+                        title="ID Front Picture"
+                        url={get_doc_url(@selected_landlord, :id_front_url, "id_front")}
+                        theme={@theme}
+                      />
+                      <.doc_card
+                        title="ID Back Picture"
+                        url={get_doc_url(@selected_landlord, :id_back_url, "id_back")}
+                        theme={@theme}
+                      />
+                      <.doc_card
+                        title="KRA PIN Certificate"
+                        url={get_doc_url(@selected_landlord, :kra_doc_url, "kra_doc")}
+                        theme={@theme}
+                      />
+                    </div>
+                  </div>
+
+                  <%!-- Section Review Action Controls --%>
+                  <.section_action_bar section="Identity Verification" theme={@theme} />
+                </div>
+
+                <%!-- Step 3: Property Details & Uploads --%>
+                <div
+                  :if={@active_tab == "3"}
+                  class={[
+                    "rounded-2xl border p-5 transition-all sm:p-6",
+                    @theme == "dark" && "border-slate-800 bg-[#0e1626] shadow-xl",
+                    @theme == "light" && "border-slate-200 bg-white shadow-sm"
+                  ]}
+                >
+                  <div class={[
+                    "flex items-center justify-between border-b pb-3",
+                    @theme == "dark" && "border-slate-800",
+                    @theme == "light" && "border-slate-200"
+                  ]}>
+                    <div class="flex items-center gap-2.5">
+                      <h3 class={[
+                        "text-lg font-bold",
+                        @theme == "dark" && "text-white",
+                        @theme == "light" && "text-slate-900"
+                      ]}>Property details</h3>
+                      <span :if={Enum.at(steps, 2).completed?} class="flex items-center text-emerald-500">
+                        <.icon name="hero-check-circle-solid" class="size-5" />
+                      </span>
+                    </div>
+                  </div>
+
+                  <div class="mt-4 grid grid-cols-1 gap-y-3.5 gap-x-8 text-sm sm:grid-cols-2">
+                    <div class={[
+                      "flex flex-col sm:flex-row sm:justify-between sm:border-b sm:pb-2",
+                      @theme == "dark" && "sm:border-slate-800/60",
+                      @theme == "light" && "sm:border-slate-100"
+                    ]}>
+                      <span class={if @theme == "dark", do: "text-slate-400", else: "text-slate-500"}>Intent:</span>
+                      <span class={[
+                        "font-medium capitalize",
+                        @theme == "dark" && "text-slate-100",
+                        @theme == "light" && "text-slate-900"
+                      ]}>{detail(@selected_landlord, :listing_purpose)}</span>
+                    </div>
+                    <div class={[
+                      "flex flex-col sm:flex-row sm:justify-between sm:border-b sm:pb-2",
+                      @theme == "dark" && "sm:border-slate-800/60",
+                      @theme == "light" && "sm:border-slate-100"
+                    ]}>
+                      <span class={if @theme == "dark", do: "text-slate-400", else: "text-slate-500"}>Property name:</span>
+                      <span class={[
+                        "font-medium",
+                        @theme == "dark" && "text-slate-100",
+                        @theme == "light" && "text-slate-900"
+                      ]}>{detail(@selected_landlord, :property_name)}</span>
+                    </div>
+                    <div class={[
+                      "flex flex-col sm:flex-row sm:justify-between sm:border-b sm:pb-2",
+                      @theme == "dark" && "sm:border-slate-800/60",
+                      @theme == "light" && "sm:border-slate-100"
+                    ]}>
+                      <span class={if @theme == "dark", do: "text-slate-400", else: "text-slate-500"}>Location:</span>
+                      <span class={[
+                        "font-medium",
+                        @theme == "dark" && "text-slate-100",
+                        @theme == "light" && "text-slate-900"
+                      ]}>{detail(@selected_landlord, :property_location)}</span>
+                    </div>
+                    <div class={[
+                      "flex flex-col sm:flex-row sm:justify-between sm:border-b sm:pb-2",
+                      @theme == "dark" && "sm:border-slate-800/60",
+                      @theme == "light" && "sm:border-slate-100"
+                    ]}>
+                      <span class={if @theme == "dark", do: "text-slate-400", else: "text-slate-500"}>Ownership type:</span>
+                      <span class={[
+                        "font-medium",
+                        @theme == "dark" && "text-slate-100",
+                        @theme == "light" && "text-slate-900"
+                      ]}>{detail(@selected_landlord, :ownership_type)}</span>
+                    </div>
+                    <div class="flex flex-col sm:flex-row sm:justify-between">
+                      <span class={if @theme == "dark", do: "text-slate-400", else: "text-slate-500"}>Title / LR no:</span>
+                      <span class={[
+                        "font-medium",
+                        @theme == "dark" && "text-slate-100",
+                        @theme == "light" && "text-slate-900"
+                      ]}>{detail(@selected_landlord, :lr_number)}</span>
+                    </div>
+                    <div class="flex flex-col sm:flex-row sm:justify-between">
+                      <span class={if @theme == "dark", do: "text-slate-400", else: "text-slate-500"}>Total units:</span>
+                      <span class={[
+                        "font-medium",
+                        @theme == "dark" && "text-slate-100",
+                        @theme == "light" && "text-slate-900"
+                      ]}>{detail(@selected_landlord, :total_units)}</span>
+                    </div>
+                  </div>
+
+                  <%!-- Property Ownership Document Picture --%>
+                  <div class={[
+                    "mt-6 border-t pt-4",
+                    @theme == "dark" && "border-slate-800",
+                    @theme == "light" && "border-slate-200"
+                  ]}>
+                    <h4 class={[
+                      "mb-3 text-xs font-semibold uppercase tracking-wider",
+                      @theme == "dark" && "text-slate-400",
+                      @theme == "light" && "text-slate-500"
+                    ]}>
+                      Ownership Document Picture
+                    </h4>
+                    <div class="max-w-sm">
+                      <.doc_card
+                        title="Proof of Ownership / Title Deed"
+                        url={get_doc_url(@selected_landlord, :ownership_doc_url, "ownership_doc")}
+                        theme={@theme}
+                      />
+                    </div>
+                  </div>
+
+                  <%!-- Section Review Action Controls --%>
+                  <.section_action_bar section="Property Details" theme={@theme} />
+                </div>
+
+                <%!-- Step 4: Billing & Payment --%>
+                <div
+                  :if={@active_tab == "4"}
+                  class={[
+                    "rounded-2xl border p-5 transition-all sm:p-6",
+                    @theme == "dark" && "border-slate-800 bg-[#0e1626] shadow-xl",
+                    @theme == "light" && "border-slate-200 bg-white shadow-sm"
+                  ]}
+                >
+                  <div class={[
+                    "flex items-center justify-between border-b pb-3",
+                    @theme == "dark" && "border-slate-800",
+                    @theme == "light" && "border-slate-200"
+                  ]}>
+                    <div class="flex items-center gap-2.5">
+                      <h3 class={[
+                        "text-lg font-bold",
+                        @theme == "dark" && "text-white",
+                        @theme == "light" && "text-slate-900"
+                      ]}>Billing & payment</h3>
+                      <span :if={Enum.at(steps, 3).completed?} class="flex items-center text-emerald-500">
+                        <.icon name="hero-check-circle-solid" class="size-5" />
+                      </span>
+                    </div>
+                  </div>
+
+                  <div class="mt-4 grid grid-cols-1 gap-y-3.5 gap-x-8 text-sm sm:grid-cols-2">
+                    <div class="flex flex-col sm:flex-row sm:justify-between">
+                      <span class={if @theme == "dark", do: "text-slate-400", else: "text-slate-500"}>Billing method:</span>
+                      <span class={[
+                        "font-medium",
+                        @theme == "dark" && "text-slate-100",
+                        @theme == "light" && "text-slate-900"
+                      ]}>{detail(@selected_landlord, :billing_method)}</span>
+                    </div>
+                    <div class="flex flex-col sm:flex-row sm:justify-between">
+                      <span class={if @theme == "dark", do: "text-slate-400", else: "text-slate-500"}>Billing phone:</span>
+                      <span class={[
+                        "font-medium",
+                        @theme == "dark" && "text-slate-100",
+                        @theme == "light" && "text-slate-900"
+                      ]}>{detail(@selected_landlord, :billing_phone)}</span>
+                    </div>
+                  </div>
+
+                  <%!-- Section Review Action Controls --%>
+                  <.section_action_bar section="Billing & Payment" theme={@theme} />
+                </div>
+
+              </main>
+            <% end %>
+
+            <%!-- Responsive Floating Chat Button --%>
+            <div class="fixed bottom-4 right-4 z-40 sm:bottom-6 sm:right-6">
+              <button
+                type="button"
+                phx-click="toggle_chat"
+                class="flex items-center gap-2 rounded-full bg-blue-600 px-4 py-3 text-xs font-bold text-white shadow-lg transition hover:bg-blue-700 active:scale-95 sm:px-5 sm:py-3.5 sm:text-sm"
+              >
+                <.icon name="hero-chat-bubble-left-right" class="size-5 sm:size-6" />
+                <span>Message Landlord</span>
+                <span :if={length(@chat_messages) > 0} class="flex size-2 rounded-full bg-emerald-400"></span>
+              </button>
+            </div>
+
+            <%!-- Direct Verification Support Chat Modal --%>
+            <div :if={@show_chat} class="fixed inset-0 z-50 flex flex-col justify-end sm:items-end sm:p-6">
+              <div
+                class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity"
+                phx-click="toggle_chat"
+              ></div>
+
+              <div class={[
+                "relative z-10 flex h-[85vh] max-h-[550px] w-full flex-col overflow-hidden rounded-t-2xl border shadow-2xl sm:h-[500px] sm:w-[420px] sm:rounded-2xl",
+                @theme == "dark" && "border-slate-800 bg-[#0e1626]",
+                @theme == "light" && "border-slate-200 bg-white"
+              ]}>
+                <%!-- Header --%>
+                <div class={[
+                  "flex items-center justify-between border-b px-4 py-3",
+                  @theme == "dark" && "border-slate-800 bg-[#131d31]",
+                  @theme == "light" && "border-slate-200 bg-slate-50"
+                ]}>
+                  <div class="flex items-center gap-3">
+                    <div class="flex size-8 items-center justify-center rounded-full bg-blue-600/10 text-blue-600">
+                      <.icon name="hero-chat-bubble-bottom-center-text" class="size-4" />
+                    </div>
+                    <div>
+                      <h4 class={[
+                        "text-xs font-bold sm:text-sm",
+                        @theme == "dark" && "text-white",
+                        @theme == "light" && "text-slate-900"
+                      ]}>Direct Inquire Chat</h4>
+                      <p class="text-[10px] font-medium text-emerald-500">
+                        Messaging: {(@selected_landlord && @selected_landlord.names) || "Landlord"}
+                      </p>
+                    </div>
+                  </div>
                   <button
-                    phx-click="approve_landlord"
-                    phx-value-id={@landlord.id}
-                    class="flex-1 sm:flex-initial px-5 py-2 rounded-xl text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-500 shadow-sm transition"
+                    type="button"
+                    phx-click="toggle_chat"
+                    class={[
+                      "rounded-lg p-1.5 transition",
+                      @theme == "dark" && "text-slate-400 hover:bg-slate-800 hover:text-white",
+                      @theme == "light" && "text-slate-500 hover:bg-slate-200 hover:text-slate-800"
+                    ]}
                   >
-                    Approve Landlord
+                    <.icon name="hero-x-mark" class="size-5" />
                   </button>
-                <% else %>
-                  <span class="px-4 py-2 rounded-xl text-xs font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20">
-                    ✓ Verified
-                  </span>
-                <% end %>
+                </div>
+
+                <%!-- Messages List --%>
+                <div class="flex-1 space-y-3 overflow-y-auto p-4">
+                  <div
+                    :for={msg <- @chat_messages}
+                    class={[
+                      "flex flex-col max-w-[88%]",
+                      msg.sender == "admin" && "ml-auto items-end",
+                      msg.sender != "admin" && "mr-auto items-start"
+                    ]}
+                  >
+                    <span class={[
+                      "mb-1 text-[10px]",
+                      @theme == "dark" && "text-slate-400",
+                      @theme == "light" && "text-slate-500"
+                    ]}>{msg.author} • {msg.time}</span>
+                    <div class={[
+                      "rounded-2xl px-3.5 py-2 text-xs leading-relaxed sm:text-sm",
+                      msg.sender == "admin" && "bg-blue-600 text-white rounded-br-none",
+                      msg.sender != "admin" && @theme == "dark" && "bg-slate-800 text-slate-200 border border-slate-700 rounded-bl-none",
+                      msg.sender != "admin" && @theme == "light" && "bg-slate-100 text-slate-800 border border-slate-200 rounded-bl-none"
+                    ]}>
+                      {msg.text}
+                    </div>
+                  </div>
+                </div>
+
+                <%!-- Input Form --%>
+                <form phx-submit="send_message" class={[
+                  "border-t p-3",
+                  @theme == "dark" && "border-slate-800 bg-[#090d16]",
+                  @theme == "light" && "border-slate-200 bg-slate-50"
+                ]}>
+                  <div class="flex items-center gap-2">
+                    <input
+                      type="text"
+                      name="message"
+                      value={@message_text}
+                      phx-change="update_message"
+                      placeholder="Type message to landlord..."
+                      class={[
+                        "flex-1 rounded-xl border px-3 py-2 text-xs focus:border-blue-600 focus:outline-none",
+                        @theme == "dark" && "border-slate-700 bg-[#0e1626] text-white placeholder-slate-500",
+                        @theme == "light" && "border-slate-300 bg-white text-slate-900 placeholder-slate-400"
+                      ]}
+                    />
+                    <button
+                      type="submit"
+                      class="rounded-xl bg-blue-600 p-2 text-white transition hover:bg-blue-700"
+                    >
+                      <.icon name="hero-paper-airplane" class="size-4" />
+                    </button>
+                  </div>
+                </form>
               </div>
             </div>
-          </main>
+
+          </div>
+        </div>
+      </section>
+    </Layouts.app>
+    """
+  end
+
+  # Sub-component for Approve, Reject, and Inquire Action Buttons
+  defp section_action_bar(assigns) do
+    ~H"""
+    <div class={[
+      "mt-6 flex flex-wrap items-center justify-end gap-3 border-t pt-4",
+      @theme == "dark" && "border-slate-800",
+      @theme == "light" && "border-slate-200"
+    ]}>
+      <button
+        type="button"
+        phx-click="reject_section"
+        phx-value-section={@section}
+        class="flex items-center gap-1.5 rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-2 text-xs font-semibold text-rose-600 transition hover:bg-rose-500 hover:text-white"
+      >
+        <.icon name="hero-x-circle" class="size-4" />
+        <span>Reject</span>
+      </button>
+
+      <button
+        type="button"
+        phx-click="open_inquire_modal"
+        phx-value-section={@section}
+        class="flex items-center gap-1.5 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-2 text-xs font-semibold text-amber-600 transition hover:bg-amber-500 hover:text-white"
+      >
+        <.icon name="hero-question-mark-circle" class="size-4" />
+        <span>Inquire</span>
+      </button>
+
+      <button
+        type="button"
+        phx-click="approve_section"
+        phx-value-section={@section}
+        class="flex items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-emerald-700"
+      >
+        <.icon name="hero-check-circle" class="size-4" />
+        <span>Approve</span>
+      </button>
+    </div>
+    """
+  end
+
+  # Sub-component for Document Display
+  defp doc_card(assigns) do
+    ~H"""
+    <div class={[
+      "overflow-hidden rounded-xl border p-3 text-xs transition",
+      @theme == "dark" && "border-slate-800 bg-[#090d16] hover:border-slate-700",
+      @theme == "light" && "border-slate-200 bg-slate-50 hover:border-slate-300"
+    ]}>
+      <div class="mb-2 flex items-center justify-between gap-2">
+        <div class="flex min-w-0 items-center gap-1.5">
+          <div :if={@url} class="shrink-0 text-emerald-500">
+            <.icon name="hero-check-circle" class="size-4" />
+          </div>
+          <p class={[
+            "truncate font-medium",
+            @theme == "dark" && "text-slate-200",
+            @theme == "light" && "text-slate-800"
+          ]}>
+            {@title}
+          </p>
+        </div>
+
+        <span :if={@url} class="rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-500">
+          Active
+        </span>
+        <span :if={!@url} class={[
+          "rounded px-1.5 py-0.5 text-[10px]",
+          @theme == "dark" && "bg-slate-800 text-slate-400",
+          @theme == "light" && "bg-slate-200 text-slate-500"
+        ]}>
+          Missing
+        </span>
+      </div>
+
+      <div :if={@url} class="mt-2 space-y-2">
+        <div class={[
+          "group relative overflow-hidden rounded-lg border",
+          @theme == "dark" && "border-slate-800 bg-slate-900",
+          @theme == "light" && "border-slate-200 bg-white"
+        ]}>
+          <img
+            src={@url}
+            alt={@title}
+            class="h-32 w-full object-cover transition-transform duration-300 group-hover:scale-105 sm:h-36"
+            loading="lazy"
+          />
+        </div>
+
+        <div class="flex items-center justify-between pt-1">
+          <a
+            href={@url}
+            target="_blank"
+            rel="noopener noreferrer"
+            class="inline-flex items-center gap-1 font-medium text-blue-600 hover:underline"
+          >
+            <.icon name="hero-arrow-top-right-on-square" class="size-3.5" /> View in new window
+          </a>
         </div>
       </div>
 
-      <%!-- LANDLORD CHAT MODAL --%>
-      <%= if @chat_open do %>
-        <div class="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4">
-          <div class={[
-            "w-full max-w-lg rounded-2xl border shadow-2xl flex flex-col max-h-[85vh] overflow-hidden",
-            @panel_bg,
-            @border_col
-          ]}>
-            <div class={["p-4 border-b flex items-center justify-between", @border_col]}>
-              <div class="flex items-center gap-2.5">
-                <div class="w-8 h-8 rounded-full bg-indigo-600/20 text-indigo-300 font-bold flex items-center justify-center text-xs border border-indigo-500/30">
-                  {String.slice(@landlord.full_name, 0, 2)}
-                </div>
-                <div>
-                  <h3 class="text-xs font-bold">{@landlord.full_name}</h3>
-                  <p class={["text-[10px]", @text_muted]}>Phone: {@landlord.phone}</p>
-                </div>
-              </div>
-
-              <button phx-click="close_chat" class="p-1 rounded-lg text-slate-400 hover:text-white">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M6 18L18 6M6 6l12 12"
-                  />
-                </svg>
-              </button>
-            </div>
-
-            <div class="flex-1 p-4 overflow-y-auto space-y-3 bg-black/20 min-h-[200px]">
-              <%= for msg <- @current_chat do %>
-                <div class={[
-                  "flex flex-col max-w-[85%]",
-                  if(msg.sender == "admin", do: "ml-auto items-end", else: "mr-auto items-start")
-                ]}>
-                  <div class={[
-                    "p-3 rounded-2xl text-xs shadow-sm",
-                    case msg.sender do
-                      "admin" ->
-                        "bg-indigo-600 text-white rounded-br-none"
-
-                      "landlord" ->
-                        "bg-slate-800 text-slate-200 rounded-bl-none border border-slate-700/40"
-
-                      _ ->
-                        "bg-slate-800/60 text-slate-400 italic text-[11px] self-center my-1"
-                    end
-                  ]}>
-                    {msg.text}
-                  </div>
-                  <span class={["text-[9px] mt-1 px-1", @text_muted]}>
-                    {msg.time}
-                  </span>
-                </div>
-              <% end %>
-            </div>
-
-            <form phx-submit="send_chat" class={["p-3 border-t flex items-center gap-2", @border_col]}>
-              <input
-                type="text"
-                name="message"
-                value={@new_message}
-                phx-change="update_message"
-                placeholder="Type message to landlord..."
-                class={[
-                  "flex-1 px-3.5 py-2 rounded-xl text-xs border focus:outline-none focus:border-indigo-500",
-                  @sub_card_bg,
-                  @border_col
-                ]}
-              />
-              <button
-                type="submit"
-                class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition"
-              >
-                Send
-              </button>
-            </form>
-          </div>
-        </div>
-      <% end %>
+      <p :if={!@url} class="mt-1 text-[11px] text-slate-400">
+        No picture uploaded.
+      </p>
     </div>
     """
+  end
+
+  defp fetch_pending_landlords do
+    if function_exported?(Accounts, :get_landlord_with_documents, 0) do
+    Accounts.list_pending_landlords_with_documents()
+
+    else
+      # Fallback mock/sample data structure if function does not exist yet
+      [
+        %{
+          id: "1",
+          names: "John Doe",
+          email: "john@example.com",
+          phone: "+254712345678",
+          whatsapp_phone: "+254712345678",
+          residence_location: "Nairobi, Kenya",
+          entity_type: "individual",
+          id_type: "National ID",
+          id_number: "12345678",
+          kra_pin: "A001234567Z",
+          listing_purpose: "rent",
+          property_name: "Sunrise Apartments",
+          property_location: "Kilimani",
+          ownership_type: "Owner",
+          lr_number: "LR 209/1234",
+          total_units: "12",
+          billing_method: "M-Pesa",
+          billing_phone: "+254712345678",
+          id_front_url: nil,
+          id_back_url: nil,
+          kra_doc_url: nil,
+          ownership_doc_url: nil,
+          documents: []
+        }
+      ]
+    end
+  end
+
+  defp filtered_landlords(landlords, ""), do: landlords
+
+  defp filtered_landlords(landlords, query) do
+    q = String.downcase(query)
+
+    Enum.filter(landlords, fn l ->
+      String.contains?(String.downcase(l.names || ""), q) or
+        String.contains?(String.downcase(l.email || ""), q)
+    end)
+  end
+
+  defp build_verification_steps(nil, _approved_sections) do
+    [
+      %{number: 1, title: "Personal details", completed?: false},
+      %{number: 2, title: "Identity verification", completed?: false},
+      %{number: 3, title: "Property details", completed?: false},
+      %{number: 4, title: "Billing & payment", completed?: false}
+    ]
+  end
+
+  defp build_verification_steps(landlord, approved_sections) do
+    landlord_approved = Map.get(approved_sections, landlord.id, MapSet.new())
+
+    normalized_set =
+      landlord_approved
+      |> Enum.map(&String.downcase/1)
+      |> MapSet.new()
+
+    step1_ok =
+      MapSet.member?(normalized_set, "personal details") or
+        MapSet.member?(normalized_set, "1") or
+        (is_struct(landlord) and Map.get(landlord, :personal_details_verified) == true)
+
+    step2_ok =
+      MapSet.member?(normalized_set, "identity verification") or
+        MapSet.member?(normalized_set, "2") or
+        (is_struct(landlord) and Map.get(landlord, :identity_verified) == true)
+
+    step3_ok =
+      MapSet.member?(normalized_set, "property details") or
+        MapSet.member?(normalized_set, "3") or
+        (is_struct(landlord) and Map.get(landlord, :property_verified) == true)
+
+    step4_ok =
+      MapSet.member?(normalized_set, "billing & payment") or
+        MapSet.member?(normalized_set, "billing and payment") or
+        MapSet.member?(normalized_set, "4") or
+        (is_struct(landlord) and Map.get(landlord, :billing_verified) == true)
+
+    [
+      %{number: 1, title: "Personal details", completed?: step1_ok},
+      %{number: 2, title: "Identity verification", completed?: step2_ok},
+      %{number: 3, title: "Property details", completed?: step3_ok},
+      %{number: 4, title: "Billing & payment", completed?: step4_ok}
+    ]
+  end
+
+  defp first_name(nil), do: nil
+
+  defp first_name(landlord) do
+    landlord.names
+    |> to_string()
+    |> String.split(" ", trim: true)
+    |> List.first()
+  end
+
+  defp get_doc_url(nil, _field, _type), do: nil
+
+  defp get_doc_url(landlord, field, type) do
+    direct_url = Map.get(landlord, field)
+
+    if direct_url not in [nil, ""] do
+      direct_url
+    else
+      case Enum.find(landlord.documents || [], &(&1.document_type == type)) do
+        doc when is_map(doc) ->
+          url = Map.get(doc, :file_url) || Map.get(doc, :url)
+          if url not in [nil, ""], do: url, else: nil
+
+        _ ->
+          nil
+      end
+    end
+  end
+
+  defp detail(nil, _field), do: "Pending"
+
+  defp detail(landlord, field) do
+    case Map.get(landlord, field) do
+      value when value in [nil, ""] -> "Pending"
+      value -> to_string(value)
+    end
+  end
+
+  defp has_value?(nil, _field), do: false
+  defp has_value?(map, field), do: Map.get(map, field) not in [nil, ""]
+
+  defp has_doc?(nil, _type), do: false
+
+  defp has_doc?(landlord, type) do
+    Enum.any?(landlord.documents || [], fn doc ->
+      doc.document_type == type and
+        (Map.get(doc, :file_url) not in [nil, ""] or Map.get(doc, :url) not in [nil, ""])
+    end)
   end
 end

@@ -681,6 +681,14 @@ defmodule Home.Accounts do
     |> Repo.preload(:documents)
   end
 
+@doc """
+Lists all landlords with their verification documents preloaded.
+"""
+def list_pending_landlords_with_documents do
+  Landlord
+  |> Repo.all()
+  |> Repo.preload(:documents)
+end
   @doc """
   Gets the landlord profile attached to a user with verification documents preloaded.
   """
