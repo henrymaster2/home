@@ -1,47 +1,79 @@
 defmodule HomeWeb.Process.Text do
   use HomeWeb, :live_view
-
   alias Home.Accounts
-
   @process_token_salt "landlord-process"
-
   @impl true
   def mount(params, _session, socket) do
-    landlord = current_landlord(params, socket)
-    steps = build_verification_steps(landlord)
-    completed_steps_count = Enum.count(steps, & &1.completed?)
-    total_steps_count = length(steps)
+  landlord = current_landlord(params, socket)
 
-    progress_percentage =
-      if total_steps_count > 0,
-        do: round((completed_steps_count / total_steps_count) * 100),
-        else: 0
-
-    mock_chat_messages = [
-      %{
-        sender: "admin",
-        author: "Admin Verification Team",
-        time: "10:15 AM",
-        text: "Hello! We are reviewing your submitted documents. Please reach out here if you have any questions."
-      }
-    ]
-
-    {:ok,
-     socket
-     |> assign(:page_title, "Home - Verification Status")
-     |> assign(:landlord, landlord)
-     |> assign(:greeting, greeting())
-     |> assign(:first_name, first_name(landlord))
-     |> assign(:steps, steps)
-     |> assign(:active_tab, "1")
-     |> assign(:completed_steps_count, completed_steps_count)
-     |> assign(:total_steps_count, total_steps_count)
-     |> assign(:progress_percentage, progress_percentage)
-     |> assign(:show_chat, false)
-     |> assign(:chat_messages, mock_chat_messages)
-     |> assign(:message_text, "")
-     |> assign(:theme, "light")}
+  if connected?(socket) and landlord do
+    Accounts.subscribe_landlord_verification(landlord.id)
   end
+
+  steps = build_verification_steps(landlord)
+  completed_steps_count = Enum.count(steps, & &1.completed?)
+  total_steps_count = length(steps)
+
+  progress_percentage =
+    if total_steps_count > 0,
+      do: round((completed_steps_count / total_steps_count) * 100),
+      else: 0
+
+  mock_chat_messages = [
+    %{
+      sender: "admin",
+      author: "Admin Verification Team",
+      time: "10:15 AM",
+      text: "Hello! We are reviewing your submitted documents. Please reach out here if you have any questions."
+    }
+  ]
+
+  {:ok,
+   socket
+   |> assign(:page_title, "Home - Verification Status")
+   |> assign(:landlord, landlord)
+   |> assign(:greeting, greeting())
+   |> assign(:first_name, first_name(landlord))
+   |> assign(:steps, steps)
+   |> assign(:active_tab, "1")
+   |> assign(:completed_steps_count, completed_steps_count)
+   |> assign(:total_steps_count, total_steps_count)
+   |> assign(:progress_percentage, progress_percentage)
+   |> assign(:show_chat, false)
+   |> assign(:chat_messages, mock_chat_messages)
+   |> assign(:message_text, "")
+   |> assign(:theme, "light")}
+end
+
+@impl true
+def handle_info({:verification_status_updated, %{landlord: updated_landlord, section: section, status: status}}, socket) do
+  steps = build_verification_steps(updated_landlord)
+  completed_steps_count = Enum.count(steps, & &1.completed?)
+  total_steps_count = length(steps)
+
+  progress_percentage =
+    if total_steps_count > 0,
+      do: round((completed_steps_count / total_steps_count) * 100),
+      else: 0
+
+  flash_type = if status in ["rejected", "inquired"], do: :error, else: :info
+
+  flash_msg = case status do
+    "approved" -> "#{section} has been approved!"
+    "rejected" -> "Action required: #{section} needs revisions."
+    "inquired" -> "Admin sent an inquiry regarding your #{section}."
+    _ -> "Verification status updated."
+  end
+
+  {:noreply,
+   socket
+   |> assign(:landlord, updated_landlord)
+   |> assign(:steps, steps)
+   |> assign(:completed_steps_count, completed_steps_count)
+   |> assign(:progress_percentage, progress_percentage)
+   |> put_flash(flash_type, flash_msg)}
+end
+
 
   @impl true
   def handle_event("select_tab", %{"tab" => tab}, socket) do
@@ -820,36 +852,36 @@ defmodule HomeWeb.Process.Text do
     end
   end
 
-  defp build_verification_steps(nil) do
-    [
-      %{number: 1, title: "Personal details", completed?: false},
-      %{number: 2, title: "Identity verification", completed?: false},
-      %{number: 3, title: "Property details", completed?: false},
-      %{number: 4, title: "Billing & payment", completed?: false}
-    ]
-  end
+  defp build_verification_steps(nil), do: []
 
-  defp build_verification_steps(landlord) do
-    step1_ok = landlord.names not in [nil, ""] and landlord.email not in [nil, ""]
-
-    step2_ok =
-      (has_value?(landlord, :id_front_url) or has_doc?(landlord, "id_front")) and
-        (has_value?(landlord, :id_back_url) or has_doc?(landlord, "id_back")) and
-        (has_value?(landlord, :kra_doc_url) or has_doc?(landlord, "kra_doc"))
-
-    step3_ok =
-      landlord.property_name not in [nil, ""] and
-        (has_value?(landlord, :ownership_doc_url) or has_doc?(landlord, "ownership_doc"))
-
-    step4_ok = has_value?(landlord, :billing_method) or has_value?(landlord, :billing_phone)
-
-    [
-      %{number: 1, title: "Personal details", completed?: step1_ok},
-      %{number: 2, title: "Identity verification", completed?: step2_ok},
-      %{number: 3, title: "Property details", completed?: step3_ok},
-      %{number: 4, title: "Billing & payment", completed?: step4_ok}
-    ]
-  end
+defp build_verification_steps(landlord) do
+  [
+    %{
+      number: 1,
+      title: "Personal details",
+      completed?: landlord.personal_details_status == "approved",
+      status: landlord.personal_details_status
+    },
+    %{
+      number: 2,
+      title: "Identity verification",
+      completed?: landlord.identity_status == "approved",
+      status: landlord.identity_status
+    },
+    %{
+      number: 3,
+      title: "Property details",
+      completed?: landlord.property_status == "approved",
+      status: landlord.property_status
+    },
+    %{
+      number: 4,
+      title: "Billing & payment",
+      completed?: landlord.billing_status == "approved",
+      status: landlord.billing_status
+    }
+  ]
+end
 
   defp greeting do
     hour =

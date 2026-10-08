@@ -1,6 +1,7 @@
 defmodule Home.Accounts.Landlord do
   use Ecto.Schema
   import Ecto.Changeset
+  @valid_statuses ["pending", "approved", "rejected", "inquired"]
 
   schema "landlords" do
     field :entity_type, :string, default: "individual"
@@ -27,6 +28,15 @@ defmodule Home.Accounts.Landlord do
     field :property_location, :string
     field :total_units, :integer
     field :ownership_doc_url, :string
+
+    # verification statuses
+    field :personal_details_status, :string, default: "pending"
+    field :identity_status, :string, default: "pending"
+    field :property_status, :string, default: "pending"
+    field :billing_status, :string, default: "pending"
+    field :verification_status, :string, default: "pending"
+    field :admin_notes, :map, default: %{}
+
 
     belongs_to :user, Home.Accounts.User
     belongs_to :verification_request, Home.Accounts.VerificationRequest
@@ -88,4 +98,22 @@ defmodule Home.Accounts.Landlord do
     |> validate_inclusion(:listing_purpose, ["renting", "leasing", "selling", "mixed"])
     |> validate_number(:total_units, greater_than_or_equal_to: 1)
   end
+
+  # verification status changeset
+  def verification_changeset(landlord, attrs) do
+  landlord
+  |> cast(attrs, [
+    :personal_details_status,
+    :identity_status,
+    :property_status,
+    :billing_status,
+    :verification_status,
+    :admin_notes
+  ])
+  |> validate_inclusion(:personal_details_status, @valid_statuses)
+  |> validate_inclusion(:identity_status, @valid_statuses)
+  |> validate_inclusion(:property_status, @valid_statuses)
+  |> validate_inclusion(:billing_status, @valid_statuses)
+  |> validate_inclusion(:verification_status, @valid_statuses)
+end
 end

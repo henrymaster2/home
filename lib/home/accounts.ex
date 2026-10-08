@@ -845,4 +845,113 @@ end
       end
     end)
   end
+  # ============================================================================
+  # Landlord statuses update with pubssub included
+  # ============================================================================
+def update_landlord_section_status(landlord, section_key, status, note \\ nil) do
+  # Map section string/atom to status field
+  status_field = section_to_field(section_key)
+
+  # Update admin notes map if a note/message is provided
+  updated_notes =
+    if note && note != "" do
+      Map.put(landlord.admin_notes || %{}, to_string(section_key), note)
+    else
+      landlord.admin_notes || %{}
+    end
+
+  params = %{
+    status_field => status,
+    admin_notes: updated_notes
+  }
+
+  # Calculate overall verification status based on all sections
+  updated_params = Map.put(params, :verification_status, calculate_overall_status(landlord, params))
+
+  landlord
+  |> Landlord.verification_changeset(updated_params)
+  |> Repo.update()
+  |> case do
+    {:ok, updated_landlord} ->
+      broadcast_verification_update(updated_landlord, section_key, status)
+      {:ok, updated_landlord}
+
+    {:error, changeset} ->
+      {:error, changeset}
+  end
+end
+
+# Helper to subscribe landlord to their specific topic
+def subscribe_landlord_verification(landlord_id) do
+  Phoenix.PubSub.subscribe(Home.PubSub, "landlord_verification:#{landlord_id}")
+end
+
+# PubSub broadcast helper
+defp broadcast_verification_update(landlord, section_key, status) do
+  Phoenix.PubSub.broadcast(
+    Home.PubSub,
+    "landlord_verification:#{landlord.id}",
+    {:verification_status_updated, %{landlord: landlord, section: section_key, status: status}}
+  )
+
+  # Also notify general admin verification topic if needed
+  Phoenix.PubSub.broadcast(
+    Home.PubSub,
+    "admin_verifications",
+    {:admin_verification_updated, landlord}
+  )
+end
+
+defp section_to_field(section) when section in ["personal_details", "Personal Details", :personal_details], do: :personal_details_status
+defp section_to_field(section) when section in ["identity", "Identity Verification", :identity], do: :identity_status
+defp section_to_field(section) when section in ["property", "Property Details", :property], do: :property_status
+defp section_to_field(section) when section in ["billing", "Billing & Payment", :billing], do: :billing_status
+defp section_to_field(field) when is_atom(field), do: field
+
+defp calculate_overall_status(landlord, new_params) do
+  statuses = [
+    Map.get(new_params, :personal_details_status, landlord.personal_details_status),
+    Map.get(new_params, :identity_status, landlord.identity_status),
+    Map.get(new_params, :property_status, landlord.property_status),
+    Map.get(new_params, :billing_status, landlord.billing_status)
+  ]
+
+  cond do
+    Enum.all?(statuses, &(&1 == "approved")) -> "approved"
+    Enum.any?(statuses, &(&1 == "rejected")) -> "rejected"
+    Enum.any?(statuses, &(&1 == "inquired")) -> "inquired"
+    true -> "pending"
+  end
+end
+
+# ============================================================================
+  #admin notes for allowing threaded inquiry mesages
+# ============================================================================
+def add_section_inquiry_message(landlord, section_key, sender, message_text) do
+  key = to_string(section_key)
+  notes = landlord.admin_notes || %{}
+
+  existing_entry = Map.get(notes, key, [])
+
+  # Normalize previous string notes to list structure if present
+  thread =
+    cond do
+      is_list(existing_entry) -> existing_entry
+      is_binary(existing_entry) -> [%{"sender" => "admin", "text" => existing_entry, "time" => "Earlier"}]
+      true -> []
+    end
+
+  new_message = %{
+    "sender" => sender, # "admin" or "landlord"
+    "text" => message_text,
+    "time" => Calendar.strftime(Time.utc_now(), "%I:%M %p")
+  }
+
+  updated_notes = Map.put(notes, key, thread ++ [new_message])
+
+  landlord
+  |> Landlord.verification_changeset(%{admin_notes: updated_notes})
+  |> Repo.update()
+end
+
 end

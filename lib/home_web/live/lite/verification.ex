@@ -115,58 +115,49 @@ defmodule HomeWeb.Verify.Text do
     {:noreply, assign(socket, :theme, theme)}
   end
 
-  def handle_event("approve_section", %{"section" => section}, socket) do
-    landlord_id = socket.assigns.selected_landlord && socket.assigns.selected_landlord.id
+  @impl true
+def handle_event("approve_section", %{"section" => section}, socket) do
+  landlord = socket.assigns.selected_landlord
 
-    approved_sections =
-      if landlord_id do
-        Map.update(
-          socket.assigns.approved_sections,
-          landlord_id,
-          MapSet.new([section]),
-          &MapSet.put(&1, section)
-        )
-      else
-        socket.assigns.approved_sections
-      end
+  case Accounts.update_landlord_section_status(landlord, section, "approved") do
+    {:ok, updated_landlord} ->
+      {:noreply,
+       socket
+       |> update_landlord_in_assigns(updated_landlord)
+       |> put_flash(:info, "Approved #{section} for #{updated_landlord.names || "Landlord"}")}
 
-    {:noreply,
-     socket
-     |> assign(:approved_sections, approved_sections)
-     |> put_flash(:info, "Approved #{section} for #{socket.assigns.selected_landlord.names || "Landlord"}")}
+    {:error, _changeset} ->
+      {:noreply, put_flash(socket, :error, "Could not update status.")}
   end
+end
 
-  def handle_event("reject_section", %{"section" => section}, socket) do
-    landlord_id = socket.assigns.selected_landlord && socket.assigns.selected_landlord.id
+@impl true
+def handle_event("reject_section", %{"section" => section}, socket) do
+  landlord = socket.assigns.selected_landlord
 
-    approved_sections =
-      if landlord_id do
-        Map.update(
-          socket.assigns.approved_sections,
-          landlord_id,
-          MapSet.new(),
-          &MapSet.delete(&1, section)
-        )
-      else
-        socket.assigns.approved_sections
-      end
+  case Accounts.update_landlord_section_status(landlord, section, "rejected") do
+    {:ok, updated_landlord} ->
+      {:noreply,
+       socket
+       |> update_landlord_in_assigns(updated_landlord)
+       |> put_flash(:error, "Rejected #{section} for #{updated_landlord.names || "Landlord"}")}
 
-    {:noreply,
-     socket
-     |> assign(:approved_sections, approved_sections)
-     |> put_flash(:error, "Rejected #{section} for #{socket.assigns.selected_landlord.names || "Landlord"}")}
+    {:error, _changeset} ->
+      {:noreply, put_flash(socket, :error, "Could not update status.")}
   end
+end
 
-  def handle_event("open_inquire_modal", %{"section" => section}, socket) do
-    default_msg = "Hello, we have a question regarding your #{section}. Please clarify."
+@impl true
+def handle_event("open_inquire_modal", %{"section" => section}, socket) do
+  default_msg = "Hello, we have a question regarding your #{section}. Please clarify."
 
-    {:noreply,
-     socket
-     |> assign(:message_text, default_msg)
-     |> assign(:show_chat, true)}
-  end
-
-  def handle_event("toggle_chat", _params, socket) do
+  {:noreply,
+   socket
+   |> assign(:active_inquire_section, section)
+   |> assign(:message_text, default_msg)
+   |> assign(:show_chat, true)}
+end
+def handle_event("toggle_chat", _params, socket) do
     {:noreply, update(socket, :show_chat, &(!&1))}
   end
 
@@ -174,19 +165,43 @@ defmodule HomeWeb.Verify.Text do
     {:noreply, assign(socket, :message_text, msg)}
   end
 
-  def handle_event("send_message", %{"message" => msg}, socket) when byte_size(msg) > 0 do
-    new_msg = %{
-      sender: "admin",
-      author: "Admin Verification Team",
-      time: Calendar.strftime(Time.utc_now(), "%I:%M %p"),
-      text: msg
-    }
+@impl true
+def handle_event("send_message", %{"message" => msg}, socket) when byte_size(msg) > 0 do
+  landlord = socket.assigns.selected_landlord
+  section = socket.assigns[:active_inquire_section] || "Personal Details"
 
-    {:noreply,
-     socket
-     |> update(:chat_messages, fn msgs -> msgs ++ [new_msg] end)
-     |> assign(:message_text, "")}
+  case Accounts.update_landlord_section_status(landlord, section, "inquired", msg) do
+    {:ok, updated_landlord} ->
+      new_msg = %{
+        sender: "admin",
+        author: "Admin Verification Team",
+        time: Calendar.strftime(Time.utc_now(), "%I:%M %p"),
+        text: msg
+      }
+
+      {:noreply,
+       socket
+       |> update_landlord_in_assigns(updated_landlord)
+       |> update(:chat_messages, fn msgs -> msgs ++ [new_msg] end)
+       |> assign(:message_text, "")
+       |> put_flash(:info, "Inquiry sent for #{section}")}
+
+    {:error, _changeset} ->
+      {:noreply, put_flash(socket, :error, "Failed to send inquiry.")}
   end
+end
+
+# Helper to keep socket lists in sync
+defp update_landlord_in_assigns(socket, updated_landlord) do
+  updated_landlords =
+    Enum.map(socket.assigns.landlords, fn l ->
+      if l.id == updated_landlord.id, do: updated_landlord, else: l
+    end)
+
+  socket
+  |> assign(:landlords, updated_landlords)
+  |> assign(:selected_landlord, updated_landlord)
+end
 
   def handle_event("send_message", _params, socket), do: {:noreply, socket}
 
@@ -1141,51 +1156,37 @@ defmodule HomeWeb.Verify.Text do
     end)
   end
 
-  defp build_verification_steps(nil, _approved_sections) do
-    [
-      %{number: 1, title: "Personal details", completed?: false},
-      %{number: 2, title: "Identity verification", completed?: false},
-      %{number: 3, title: "Property details", completed?: false},
-      %{number: 4, title: "Billing & payment", completed?: false}
-    ]
-  end
+  defp build_verification_steps(nil, _approved_sections), do: []
 
-  defp build_verification_steps(landlord, approved_sections) do
-    landlord_approved = Map.get(approved_sections, landlord.id, MapSet.new())
+defp build_verification_steps(landlord, _approved_sections) do
+  [
+    %{
+      number: 1,
+      title: "Personal details",
+      completed?: landlord.personal_details_status == "approved",
+      status: landlord.personal_details_status
+    },
+    %{
+      number: 2,
+      title: "Identity verification",
+      completed?: landlord.identity_status == "approved",
+      status: landlord.identity_status
+    },
+    %{
+      number: 3,
+      title: "Property details",
+      completed?: landlord.property_status == "approved",
+      status: landlord.property_status
+    },
+    %{
+      number: 4,
+      title: "Billing & payment",
+      completed?: landlord.billing_status == "approved",
+      status: landlord.billing_status
+    }
+  ]
+end
 
-    normalized_set =
-      landlord_approved
-      |> Enum.map(&String.downcase/1)
-      |> MapSet.new()
-
-    step1_ok =
-      MapSet.member?(normalized_set, "personal details") or
-        MapSet.member?(normalized_set, "1") or
-        (is_struct(landlord) and Map.get(landlord, :personal_details_verified) == true)
-
-    step2_ok =
-      MapSet.member?(normalized_set, "identity verification") or
-        MapSet.member?(normalized_set, "2") or
-        (is_struct(landlord) and Map.get(landlord, :identity_verified) == true)
-
-    step3_ok =
-      MapSet.member?(normalized_set, "property details") or
-        MapSet.member?(normalized_set, "3") or
-        (is_struct(landlord) and Map.get(landlord, :property_verified) == true)
-
-    step4_ok =
-      MapSet.member?(normalized_set, "billing & payment") or
-        MapSet.member?(normalized_set, "billing and payment") or
-        MapSet.member?(normalized_set, "4") or
-        (is_struct(landlord) and Map.get(landlord, :billing_verified) == true)
-
-    [
-      %{number: 1, title: "Personal details", completed?: step1_ok},
-      %{number: 2, title: "Identity verification", completed?: step2_ok},
-      %{number: 3, title: "Property details", completed?: step3_ok},
-      %{number: 4, title: "Billing & payment", completed?: step4_ok}
-    ]
-  end
 
   defp first_name(nil), do: nil
 
