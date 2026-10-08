@@ -681,14 +681,16 @@ defmodule Home.Accounts do
     |> Repo.preload(:documents)
   end
 
-@doc """
-Lists all landlords with their verification documents preloaded.
-"""
-def list_pending_landlords_with_documents do
-  Landlord
-  |> Repo.all()
-  |> Repo.preload(:documents)
-end
+  @doc """
+  Lists all landlords with their verification documents preloaded.
+  """
+  def list_pending_landlords_with_documents do
+    Landlord
+    |> where([l], l.verification_status != "approved")
+    |> Repo.all()
+    |> Repo.preload(:documents)
+  end
+
   @doc """
   Gets the landlord profile attached to a user with verification documents preloaded.
   """
@@ -701,19 +703,19 @@ end
   end
 
   @doc """
-Completes landlord onboarding by creating the User, Landlord, and document rows.
-"""
-def complete_landlord_registration(invite, form_data) do
-  case Repo.transaction(fn -> create_or_update_landlord_registration(invite, form_data) end) do
-    {:ok, landlord} ->
-      # Broadcast event using your existing @pubsub and @topic
-      Phoenix.PubSub.broadcast(@pubsub, @topic, {:new_landlord_registration, landlord})
-      {:ok, landlord}
+  Completes landlord onboarding by creating the User, Landlord, and document rows.
+  """
+  def complete_landlord_registration(invite, form_data) do
+    case Repo.transaction(fn -> create_or_update_landlord_registration(invite, form_data) end) do
+      {:ok, landlord} ->
+        # Broadcast event using your existing @pubsub and @topic
+        Phoenix.PubSub.broadcast(@pubsub, @topic, {:new_landlord_registration, landlord})
+        {:ok, landlord}
 
-    {:error, changeset_or_reason} ->
-      {:error, changeset_or_reason}
+      {:error, changeset_or_reason} ->
+        {:error, changeset_or_reason}
+    end
   end
-end
 
   defp create_or_update_landlord_registration(invite, form_data) do
     password = Map.get(form_data, "password") || "DefaultPass123!"
@@ -845,113 +847,160 @@ end
       end
     end)
   end
+
   # ============================================================================
   # Landlord statuses update with pubssub included
   # ============================================================================
-def update_landlord_section_status(landlord, section_key, status, note \\ nil) do
-  # Map section string/atom to status field
-  status_field = section_to_field(section_key)
+  def update_landlord_section_status(landlord, section_key, status, note \\ nil) do
+    # Map section string/atom to status field
+    status_field = section_to_field(section_key)
 
-  # Update admin notes map if a note/message is provided
-  updated_notes =
-    if note && note != "" do
-      Map.put(landlord.admin_notes || %{}, to_string(section_key), note)
-    else
-      landlord.admin_notes || %{}
+    # Update admin notes map if a note/message is provided
+    updated_notes =
+      if note && note != "" do
+        Map.put(landlord.admin_notes || %{}, to_string(section_key), note)
+      else
+        landlord.admin_notes || %{}
+      end
+
+    params = %{
+      status_field => status,
+      admin_notes: updated_notes
+    }
+
+    # Calculate overall verification status based on all sections
+    updated_params =
+      Map.put(params, :verification_status, calculate_overall_status(landlord, params))
+
+    landlord
+    |> Landlord.verification_changeset(updated_params)
+    |> Repo.update()
+    |> case do
+      {:ok, updated_landlord} ->
+        broadcast_verification_update(updated_landlord, section_key, status)
+        {:ok, updated_landlord}
+
+      {:error, changeset} ->
+        {:error, changeset}
     end
-
-  params = %{
-    status_field => status,
-    admin_notes: updated_notes
-  }
-
-  # Calculate overall verification status based on all sections
-  updated_params = Map.put(params, :verification_status, calculate_overall_status(landlord, params))
-
-  landlord
-  |> Landlord.verification_changeset(updated_params)
-  |> Repo.update()
-  |> case do
-    {:ok, updated_landlord} ->
-      broadcast_verification_update(updated_landlord, section_key, status)
-      {:ok, updated_landlord}
-
-    {:error, changeset} ->
-      {:error, changeset}
   end
-end
 
-# Helper to subscribe landlord to their specific topic
-def subscribe_landlord_verification(landlord_id) do
-  Phoenix.PubSub.subscribe(Home.PubSub, "landlord_verification:#{landlord_id}")
-end
+  def update_landlord_status(landlord, status)
+      when status in ["approved", "rejected", "pending"] do
+    section_status =
+      case status do
+        "approved" -> "approved"
+        "rejected" -> "rejected"
+        _ -> "pending"
+      end
 
-# PubSub broadcast helper
-defp broadcast_verification_update(landlord, section_key, status) do
-  Phoenix.PubSub.broadcast(
-    Home.PubSub,
-    "landlord_verification:#{landlord.id}",
-    {:verification_status_updated, %{landlord: landlord, section: section_key, status: status}}
-  )
+    landlord
+    |> Landlord.verification_changeset(%{
+      personal_details_status: section_status,
+      identity_status: section_status,
+      property_status: section_status,
+      billing_status: section_status,
+      verification_status: status
+    })
+    |> Repo.update()
+    |> case do
+      {:ok, updated_landlord} ->
+        broadcast_verification_update(updated_landlord, "Final Approval", status)
+        {:ok, updated_landlord}
 
-  # Also notify general admin verification topic if needed
-  Phoenix.PubSub.broadcast(
-    Home.PubSub,
-    "admin_verifications",
-    {:admin_verification_updated, landlord}
-  )
-end
-
-defp section_to_field(section) when section in ["personal_details", "Personal Details", :personal_details], do: :personal_details_status
-defp section_to_field(section) when section in ["identity", "Identity Verification", :identity], do: :identity_status
-defp section_to_field(section) when section in ["property", "Property Details", :property], do: :property_status
-defp section_to_field(section) when section in ["billing", "Billing & Payment", :billing], do: :billing_status
-defp section_to_field(field) when is_atom(field), do: field
-
-defp calculate_overall_status(landlord, new_params) do
-  statuses = [
-    Map.get(new_params, :personal_details_status, landlord.personal_details_status),
-    Map.get(new_params, :identity_status, landlord.identity_status),
-    Map.get(new_params, :property_status, landlord.property_status),
-    Map.get(new_params, :billing_status, landlord.billing_status)
-  ]
-
-  cond do
-    Enum.all?(statuses, &(&1 == "approved")) -> "approved"
-    Enum.any?(statuses, &(&1 == "rejected")) -> "rejected"
-    Enum.any?(statuses, &(&1 == "inquired")) -> "inquired"
-    true -> "pending"
+      {:error, changeset} ->
+        {:error, changeset}
+    end
   end
-end
 
-# ============================================================================
-  #admin notes for allowing threaded inquiry mesages
-# ============================================================================
-def add_section_inquiry_message(landlord, section_key, sender, message_text) do
-  key = to_string(section_key)
-  notes = landlord.admin_notes || %{}
+  def update_landlord_status(landlord, "verified"),
+    do: update_landlord_status(landlord, "approved")
 
-  existing_entry = Map.get(notes, key, [])
+  # Helper to subscribe landlord to their specific topic
+  def subscribe_landlord_verification(landlord_id) do
+    Phoenix.PubSub.subscribe(Home.PubSub, "landlord_verification:#{landlord_id}")
+  end
 
-  # Normalize previous string notes to list structure if present
-  thread =
+  # PubSub broadcast helper
+  defp broadcast_verification_update(landlord, section_key, status) do
+    Phoenix.PubSub.broadcast(
+      Home.PubSub,
+      "landlord_verification:#{landlord.id}",
+      {:verification_status_updated, %{landlord: landlord, section: section_key, status: status}}
+    )
+
+    # Also notify general admin verification topic if needed
+    Phoenix.PubSub.broadcast(
+      Home.PubSub,
+      "admin_verifications",
+      {:admin_verification_updated, landlord}
+    )
+  end
+
+  defp section_to_field(section)
+       when section in ["personal_details", "Personal Details", :personal_details],
+       do: :personal_details_status
+
+  defp section_to_field(section) when section in ["identity", "Identity Verification", :identity],
+    do: :identity_status
+
+  defp section_to_field(section) when section in ["property", "Property Details", :property],
+    do: :property_status
+
+  defp section_to_field(section) when section in ["billing", "Billing & Payment", :billing],
+    do: :billing_status
+
+  defp section_to_field(field) when is_atom(field), do: field
+
+  defp calculate_overall_status(landlord, new_params) do
+    statuses = [
+      Map.get(new_params, :personal_details_status, landlord.personal_details_status),
+      Map.get(new_params, :identity_status, landlord.identity_status),
+      Map.get(new_params, :property_status, landlord.property_status),
+      Map.get(new_params, :billing_status, landlord.billing_status)
+    ]
+
     cond do
-      is_list(existing_entry) -> existing_entry
-      is_binary(existing_entry) -> [%{"sender" => "admin", "text" => existing_entry, "time" => "Earlier"}]
-      true -> []
+      Enum.all?(statuses, &(&1 == "approved")) -> "approved"
+      Enum.any?(statuses, &(&1 == "rejected")) -> "rejected"
+      Enum.any?(statuses, &(&1 == "inquired")) -> "inquired"
+      true -> "pending"
     end
+  end
 
-  new_message = %{
-    "sender" => sender, # "admin" or "landlord"
-    "text" => message_text,
-    "time" => Calendar.strftime(Time.utc_now(), "%I:%M %p")
-  }
+  # ============================================================================
+  # admin notes for allowing threaded inquiry mesages
+  # ============================================================================
+  def add_section_inquiry_message(landlord, section_key, sender, message_text) do
+    key = to_string(section_key)
+    notes = landlord.admin_notes || %{}
 
-  updated_notes = Map.put(notes, key, thread ++ [new_message])
+    existing_entry = Map.get(notes, key, [])
 
-  landlord
-  |> Landlord.verification_changeset(%{admin_notes: updated_notes})
-  |> Repo.update()
-end
+    # Normalize previous string notes to list structure if present
+    thread =
+      cond do
+        is_list(existing_entry) ->
+          existing_entry
 
+        is_binary(existing_entry) ->
+          [%{"sender" => "admin", "text" => existing_entry, "time" => "Earlier"}]
+
+        true ->
+          []
+      end
+
+    new_message = %{
+      # "admin" or "landlord"
+      "sender" => sender,
+      "text" => message_text,
+      "time" => Calendar.strftime(Time.utc_now(), "%I:%M %p")
+    }
+
+    updated_notes = Map.put(notes, key, thread ++ [new_message])
+
+    landlord
+    |> Landlord.verification_changeset(%{admin_notes: updated_notes})
+    |> Repo.update()
+  end
 end

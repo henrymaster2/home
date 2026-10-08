@@ -165,38 +165,38 @@ defmodule HomeWeb.Lite.Register do
 
   @impl true
   # 2. Step 3 -> Step 4: Consume Proof of Ownership upload into Cloudinary
-def handle_event("next_step", params, %{assigns: %{step: 3}} = socket) do
-  merged = Map.merge(socket.assigns.form_data, form_values(params))
+  def handle_event("next_step", params, %{assigns: %{step: 3}} = socket) do
+    merged = Map.merge(socket.assigns.form_data, form_values(params))
 
-  ownership_doc_urls =
-    consume_uploaded_entries(socket, :ownership_doc, &upload_verification_doc/2)
+    ownership_doc_urls =
+      consume_uploaded_entries(socket, :ownership_doc, &upload_verification_doc/2)
 
-  updated_form_data =
-    merged
-    |> Map.put(
-      "ownership_doc_url",
-      extract_url(ownership_doc_urls) || merged["ownership_doc_url"]
-    )
+    updated_form_data =
+      merged
+      |> Map.put(
+        "ownership_doc_url",
+        extract_url(ownership_doc_urls) || merged["ownership_doc_url"]
+      )
 
-  # Persist step 3 data and file URL into DB draft
-  if invite = socket.assigns.invite do
-    verification_request = Accounts.get_verification_request_by_email(invite.email)
-    request_attrs = verification_request_attrs(invite, updated_form_data)
+    # Persist step 3 data and file URL into DB draft
+    if invite = socket.assigns.invite do
+      verification_request = Accounts.get_verification_request_by_email(invite.email)
+      request_attrs = verification_request_attrs(invite, updated_form_data)
 
-    Accounts.save_verification_draft(
-      verification_request,
-      request_attrs,
-      updated_form_data,
-      4
-    )
+      Accounts.save_verification_draft(
+        verification_request,
+        request_attrs,
+        updated_form_data,
+        4
+      )
+    end
+
+    {:noreply,
+     socket
+     |> assign(:form_data, updated_form_data)
+     |> assign(:step, 4)
+     |> assign(:mobile_steps_open, false)}
   end
-
-  {:noreply,
-   socket
-   |> assign(:form_data, updated_form_data)
-   |> assign(:step, 4)
-   |> assign(:mobile_steps_open, false)}
-end
 
   @impl true
   # 3. Fallback: Handles remaining step transitions (Step 1 -> 2, Step 4 -> 5)
@@ -312,49 +312,49 @@ end
     end
   end
 
-defp register_landlord(params, invite, socket) do
-  {uploaded_urls, upload_errors} = consume_all_uploads(socket)
+  defp register_landlord(params, invite, socket) do
+    {uploaded_urls, upload_errors} = consume_all_uploads(socket)
 
-  form_data =
-    socket.assigns.form_data
-    |> Map.merge(form_values(params))
-    |> Map.merge(uploaded_urls)
+    form_data =
+      socket.assigns.form_data
+      |> Map.merge(form_values(params))
+      |> Map.merge(uploaded_urls)
 
-  if upload_errors == [] do
-    case Accounts.complete_landlord_registration(invite, form_data) do
-      {:ok, landlord} ->
-        Accounts.mark_invite_as_used(invite)
+    if upload_errors == [] do
+      case Accounts.complete_landlord_registration(invite, form_data) do
+        {:ok, landlord} ->
+          Accounts.mark_invite_as_used(invite)
 
-        {:noreply,
-         socket
-         |> put_flash(:info, "Landlord registration submitted successfully!")
-         |> redirect(to: landlord_process_path(landlord))}
+          {:noreply,
+           socket
+           |> put_flash(:info, "Landlord registration submitted successfully!")
+           |> redirect(to: landlord_process_path(landlord))}
 
-      {:error, changeset_or_reason} ->
-        # 1. Print exact error to terminal for easy debugging
-        IO.inspect(changeset_or_reason, label: "LANDLORD REGISTRATION ERROR")
+        {:error, changeset_or_reason} ->
+          # 1. Print exact error to terminal for easy debugging
+          IO.inspect(changeset_or_reason, label: "LANDLORD REGISTRATION ERROR")
 
-        error_msg =
-          case changeset_or_reason do
-            %Ecto.Changeset{} = cs -> changeset_error_messages(cs)
-            reason when is_binary(reason) -> reason
-            _ -> "Registration failed. Please check all fields."
-          end
+          error_msg =
+            case changeset_or_reason do
+              %Ecto.Changeset{} = cs -> changeset_error_messages(cs)
+              reason when is_binary(reason) -> reason
+              _ -> "Registration failed. Please check all fields."
+            end
 
-        # 2. Flash error on UI so submission doesn't fail silently
-        {:noreply,
-         socket
-         |> assign(:form_data, Map.drop(form_data, ["password", "password_confirmation"]))
-         |> assign(:registration_error, error_msg)
-         |> put_flash(:error, error_msg)}
+          # 2. Flash error on UI so submission doesn't fail silently
+          {:noreply,
+           socket
+           |> assign(:form_data, Map.drop(form_data, ["password", "password_confirmation"]))
+           |> assign(:registration_error, error_msg)
+           |> put_flash(:error, error_msg)}
+      end
+    else
+      {:noreply,
+       socket
+       |> assign(:form_data, Map.drop(form_data, ["password", "password_confirmation"]))
+       |> put_flash(:error, upload_error_message(upload_errors))}
     end
-  else
-    {:noreply,
-     socket
-     |> assign(:form_data, Map.drop(form_data, ["password", "password_confirmation"]))
-     |> put_flash(:error, upload_error_message(upload_errors))}
   end
-end
 
   defp save_draft_from_params(params, socket) do
     case socket.assigns.invite do
@@ -422,13 +422,12 @@ end
   end
 
   defp upload_in_progress?(uploads) do
-  Enum.any?([:id_front, :id_back, :kra_doc, :ownership_doc], fn upload_key ->
-    Enum.any?(uploads[upload_key].entries, fn entry -> !entry.done? end)
-  end)
+    Enum.any?([:id_front, :id_back, :kra_doc, :ownership_doc], fn upload_key ->
+      Enum.any?(uploads[upload_key].entries, fn entry -> !entry.done? end)
+    end)
   end
 
   defp consume_document_upload(socket, upload_name, url_key) do
-
     upload_config = socket.assigns.uploads[upload_name]
     has_pending_entry? = upload_config.entries != []
 
@@ -449,28 +448,33 @@ end
             {:ok, %{"error" => reason}}
         end
       end)
-      case List.first(entries) do
-        %{"error" => reason} ->
-          {%{}, [{upload_name, reason}]}
 
-          %{"url" => url, "meta" => metadata} ->
-            {%{url_key => url, "#{upload_name}_meta" => metadata}, []}
+    case List.first(entries) do
+      %{"error" => reason} ->
+        {%{}, [{upload_name, reason}]}
 
-            nil ->
-              existing_url = socket.assigns.form_data[url_key]
-              existing_metadata = socket.assigns.form_data["#{upload_name}_meta"]
+      %{"url" => url, "meta" => metadata} ->
+        {%{url_key => url, "#{upload_name}_meta" => metadata}, []}
 
-              cond do
-                has_pending_entry? ->
-                  {%{}, [{upload_name, "Upload in progress. Please wait until the upload is complete before saving."}]}
+      nil ->
+        existing_url = socket.assigns.form_data[url_key]
+        existing_metadata = socket.assigns.form_data["#{upload_name}_meta"]
 
-                  existing_url not in [nil, ""] ->
-                    {%{url_key => existing_url, "#{upload_name}_meta" => existing_metadata || %{}}, []}
+        cond do
+          has_pending_entry? ->
+            {%{},
+             [
+               {upload_name,
+                "Upload in progress. Please wait until the upload is complete before saving."}
+             ]}
 
-                    true ->
-                      {%{}, []}
-              end
-      end
+          existing_url not in [nil, ""] ->
+            {%{url_key => existing_url, "#{upload_name}_meta" => existing_metadata || %{}}, []}
+
+          true ->
+            {%{}, []}
+        end
+    end
 
     case List.first(entries) do
       %{"error" => reason} ->
@@ -1137,7 +1141,7 @@ end
                       </div>
                     </div>
                   <% end %>
-
+                  
     <!-- Body: rail + step panels -->
                   <div class="flex flex-col sm:flex-row">
                     <!-- Rail -->
@@ -1288,7 +1292,7 @@ end
                         </li>
                       </ol>
                     </aside>
-
+                    
     <!-- Steps Form Container -->
                     <main class="flex-1 min-w-0 px-4 sm:px-8 py-5 sm:py-6 min-h-[380px]">
                       <form id="landlord-kyc-form" phx-change="update_field" phx-submit="register">
@@ -1328,7 +1332,7 @@ end
                                 </label>
                               </div>
                             </div>
-
+                            
     <!-- Full / Business Name -->
                             <div class="sm:col-span-2">
                               <label class="block text-xs font-semibold ink-dim mb-1.5">
@@ -1344,7 +1348,7 @@ end
                                 class="field-input w-full rounded-lg px-4 py-2.5 text-sm"
                               />
                             </div>
-
+                            
     <!-- Email Address (Read-only) -->
                             <div class="sm:col-span-2">
                               <label class="block text-xs font-semibold ink-dim mb-1.5">
@@ -1358,7 +1362,7 @@ end
                                 class="field-input w-full rounded-lg px-4 py-2.5 text-sm"
                               />
                             </div>
-
+                            
     <!-- Primary Phone -->
                             <div>
                               <label class="block text-xs font-semibold ink-dim mb-1.5">
@@ -1373,7 +1377,7 @@ end
                                 class="field-input w-full rounded-lg px-4 py-2.5 text-sm"
                               />
                             </div>
-
+                            
     <!-- WhatsApp Phone -->
                             <div>
                               <label class="block text-xs font-semibold ink-dim mb-1.5">
@@ -1387,7 +1391,7 @@ end
                                 class="field-input w-full rounded-lg px-4 py-2.5 text-sm"
                               />
                             </div>
-
+                            
     <!-- Residence Location -->
                             <div class="sm:col-span-2">
                               <label class="block text-xs font-semibold ink-dim mb-1.5">
@@ -1403,7 +1407,7 @@ end
                             </div>
                           </div>
                         </section>
-
+                        
     <!-- STEP 2 -->
 
                         <section class={if @step == 2, do: "block", else: "hidden"}>
@@ -1449,7 +1453,7 @@ end
                                 <% end %>
                               </select>
                             </div>
-
+                            
     <!-- ID Number -->
                             <div>
                               <label class="block text-xs font-semibold ink-dim mb-1.5">
@@ -1469,7 +1473,7 @@ end
                                 class="field-input w-full rounded-lg px-4 py-2.5 text-sm"
                               />
                             </div>
-
+                            
     <!-- KRA PIN -->
                             <div class="sm:col-span-2">
                               <label class="block text-xs font-semibold ink-dim mb-1.5">
@@ -1483,7 +1487,7 @@ end
                                 class="field-input w-full uppercase rounded-lg px-4 py-2.5 text-sm"
                               />
                             </div>
-
+                            
     <!-- Front Upload -->
                             <div>
                               <label class="block text-xs font-semibold ink-dim mb-1.5">
@@ -1568,7 +1572,7 @@ end
                                 <% end %>
                               </div>
                             </div>
-
+                            
     <!-- Back Upload -->
                             <div>
                               <label class="block text-xs font-semibold ink-dim mb-1.5">
@@ -1651,7 +1655,7 @@ end
                                 <% end %>
                               </div>
                             </div>
-
+                            
     <!-- KRA Certificate Upload (Full Width) -->
                             <div class="sm:col-span-2">
                               <label class="block text-xs font-semibold ink-dim mb-1.5">
@@ -1736,7 +1740,7 @@ end
                             </div>
                           </div>
                         </section>
-
+                        
     <!-- STEP 3 -->
 
                         <section class={if @step == 3, do: "block", else: "hidden"}>
@@ -1795,7 +1799,7 @@ end
                                 </label>
                               </div>
                             </div>
-
+                            
     <!-- Property Name -->
                             <div>
                               <label class="block text-xs font-semibold ink-dim mb-1.5">
@@ -1809,7 +1813,7 @@ end
                                 class="field-input w-full rounded-lg px-4 py-2.5 text-sm"
                               />
                             </div>
-
+                            
     <!-- Property Location -->
                             <div>
                               <label class="block text-xs font-semibold ink-dim mb-1.5">
@@ -1823,7 +1827,7 @@ end
                                 class="field-input w-full rounded-lg px-4 py-2.5 text-sm"
                               />
                             </div>
-
+                            
     <!-- Ownership Type -->
                             <div>
                               <label class="block text-xs font-semibold ink-dim mb-1.5">
@@ -1850,7 +1854,7 @@ end
                                 </option>
                               </select>
                             </div>
-
+                            
     <!-- Title Deed / LR Number -->
                             <div>
                               <label class="block text-xs font-semibold ink-dim mb-1.5">
@@ -1864,7 +1868,7 @@ end
                                 class="field-input w-full rounded-lg px-4 py-2.5 text-sm"
                               />
                             </div>
-
+                            
     <!-- Estimated Total Units -->
                             <div class="sm:col-span-2">
                               <label class="block text-xs font-semibold ink-dim mb-1.5">
@@ -1879,7 +1883,7 @@ end
                                 class="field-input w-full rounded-lg px-4 py-2.5 text-sm"
                               />
                             </div>
-
+                            
     <!-- Ownership Document Upload -->
                             <div class="sm:col-span-2">
                               <label class="block text-xs font-semibold ink-dim mb-1.5">
@@ -1977,7 +1981,7 @@ end
                             </div>
                           </div>
                         </section>
-
+                        
     <!-- STEP 4 -->
 
                         <section class={if @step == 4, do: "block", else: "hidden"}>
@@ -2009,7 +2013,7 @@ end
                                 </option>
                               </select>
                             </div>
-
+                            
     <!-- Billing Phone Number -->
                             <div>
                               <label class="block text-xs font-semibold ink-dim mb-1.5">
@@ -2023,7 +2027,7 @@ end
                                 class="field-input w-full rounded-lg px-4 py-2.5 text-sm"
                               />
                             </div>
-
+                            
     <!-- Optional Direct Payouts Section -->
                             <div class="sm:col-span-2 mt-2 pt-4 border-t border-token">
                               <div class="flex items-center gap-2 mb-3">
@@ -2092,7 +2096,7 @@ end
                             </div>
                           </div>
                         </section>
-
+                        
     <!-- STEP 5 --><!-- STEP 5 -->
                         <section class={if @step == 5, do: "block", else: "hidden"}>
                           <h2 class="font-serif-display text-lg ink mb-1">Review & submit</h2>
@@ -2141,7 +2145,7 @@ end
                                 </div>
                               </div>
                             </div>
-
+                            
     <!-- Step 2 Summary -->
                             <div class="panel-alt border border-token rounded-lg p-4">
                               <div class="flex items-center justify-between mb-2">
@@ -2191,68 +2195,68 @@ end
                                 </div>
                               </div>
                             </div>
-
+                            
     <!-- Step 3 Summary -->
-                           <div class="panel-alt border border-token rounded-lg p-4">
-  <div class="flex items-center justify-between mb-2">
-    <h3 class="font-semibold ink text-sm">3. Property details</h3>
-    <button
-      type="button"
-      phx-click="go_to_step"
-      phx-value-step="3"
-      class="text-accent hover:underline font-medium"
-    >
-      Edit
-    </button>
-  </div>
-  <div class="grid grid-cols-2 gap-2 ink-dim">
-    <div>
-      <span class="font-medium ink">Intent:</span> {String.capitalize(
-        @form_data["listing_purpose"] || "renting"
-      )}
-    </div>
-    <div>
-      <span class="font-medium ink">Property name:</span> {@form_data[
-        "property_name"
-      ]}
-    </div>
-    <div>
-      <span class="font-medium ink">Location:</span> {@form_data[
-        "property_location"
-      ]}
-    </div>
-    <div>
-      <span class="font-medium ink">Ownership type:</span> {@form_data[
-        "ownership_type"
-      ]}
-    </div>
-    <div>
-      <span class="font-medium ink">Title / LR no:</span> {@form_data[
-        "lr_number"
-      ]}
-    </div>
-    <div>
-      <span class="font-medium ink">Total units:</span> {@form_data[
-        "total_units"
-      ]}
-    </div>
-    <div>
-      <span class="font-medium ink">Ownership doc:</span>
-      {cond do
-        @form_data["ownership_doc_url"] not in [nil, ""] ->
-          "Attached"
+                            <div class="panel-alt border border-token rounded-lg p-4">
+                              <div class="flex items-center justify-between mb-2">
+                                <h3 class="font-semibold ink text-sm">3. Property details</h3>
+                                <button
+                                  type="button"
+                                  phx-click="go_to_step"
+                                  phx-value-step="3"
+                                  class="text-accent hover:underline font-medium"
+                                >
+                                  Edit
+                                </button>
+                              </div>
+                              <div class="grid grid-cols-2 gap-2 ink-dim">
+                                <div>
+                                  <span class="font-medium ink">Intent:</span> {String.capitalize(
+                                    @form_data["listing_purpose"] || "renting"
+                                  )}
+                                </div>
+                                <div>
+                                  <span class="font-medium ink">Property name:</span> {@form_data[
+                                    "property_name"
+                                  ]}
+                                </div>
+                                <div>
+                                  <span class="font-medium ink">Location:</span> {@form_data[
+                                    "property_location"
+                                  ]}
+                                </div>
+                                <div>
+                                  <span class="font-medium ink">Ownership type:</span> {@form_data[
+                                    "ownership_type"
+                                  ]}
+                                </div>
+                                <div>
+                                  <span class="font-medium ink">Title / LR no:</span> {@form_data[
+                                    "lr_number"
+                                  ]}
+                                </div>
+                                <div>
+                                  <span class="font-medium ink">Total units:</span> {@form_data[
+                                    "total_units"
+                                  ]}
+                                </div>
+                                <div>
+                                  <span class="font-medium ink">Ownership doc:</span>
+                                  {cond do
+                                    @form_data["ownership_doc_url"] not in [nil, ""] ->
+                                      "Attached"
 
-        @uploads.ownership_doc.entries != [] ->
-          entry = List.first(@uploads.ownership_doc.entries)
-          if entry.done?, do: "Attached", else: "Uploading..."
+                                    @uploads.ownership_doc.entries != [] ->
+                                      entry = List.first(@uploads.ownership_doc.entries)
+                                      if entry.done?, do: "Attached", else: "Uploading..."
 
-        true ->
-          "Not uploaded"
-      end}
-    </div>
-  </div>
-</div>
-
+                                    true ->
+                                      "Not uploaded"
+                                  end}
+                                </div>
+                              </div>
+                            </div>
+                            
     <!-- Step 4 Summary -->
                             <div class="panel-alt border border-token rounded-lg p-4">
                               <div class="flex items-center justify-between mb-2">
@@ -2291,7 +2295,7 @@ end
                                 <% end %>
                               </div>
                             </div>
-
+                            
     <!-- Compliance Terms Checkbox -->
                             <div class="pt-2">
                               <label class="flex items-start gap-2.5 cursor-pointer">
@@ -2316,7 +2320,7 @@ end
                       </form>
                     </main>
                   </div>
-
+                  
     <!-- Footer Navigation -->
                   <div class="px-4 sm:px-8 py-4 border-t border-token flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                     <button

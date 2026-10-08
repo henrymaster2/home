@@ -4,76 +4,85 @@ defmodule HomeWeb.Process.Text do
   @process_token_salt "landlord-process"
   @impl true
   def mount(params, _session, socket) do
-  landlord = current_landlord(params, socket)
+    landlord = current_landlord(params, socket)
 
-  if connected?(socket) and landlord do
-    Accounts.subscribe_landlord_verification(landlord.id)
+    if connected?(socket) and landlord do
+      Accounts.subscribe_landlord_verification(landlord.id)
+    end
+
+    steps = build_verification_steps(landlord)
+    completed_steps_count = Enum.count(steps, & &1.completed?)
+    total_steps_count = length(steps)
+
+    progress_percentage =
+      if total_steps_count > 0,
+        do: round(completed_steps_count / total_steps_count * 100),
+        else: 0
+
+    chat_messages = chat_messages_for_landlord(landlord)
+
+    {:ok,
+     socket
+     |> assign(:page_title, "Home - Verification Status")
+     |> assign(:landlord, landlord)
+     |> assign(:greeting, greeting())
+     |> assign(:first_name, first_name(landlord))
+     |> assign(:steps, steps)
+     |> assign(:active_tab, "1")
+     |> assign(:completed_steps_count, completed_steps_count)
+     |> assign(:total_steps_count, total_steps_count)
+     |> assign(:progress_percentage, progress_percentage)
+     |> assign(:show_chat, false)
+     |> assign(:show_verified_modal, landlord && landlord.verification_status == "approved")
+     |> assign(:chat_messages, chat_messages)
+     |> assign(:message_text, "")
+     |> assign(:theme, "light")}
   end
 
-  steps = build_verification_steps(landlord)
-  completed_steps_count = Enum.count(steps, & &1.completed?)
-  total_steps_count = length(steps)
+  @impl true
+  def handle_info(
+        {:verification_status_updated,
+         %{landlord: updated_landlord, section: section, status: status}},
+        socket
+      ) do
+    steps = build_verification_steps(updated_landlord)
+    completed_steps_count = Enum.count(steps, & &1.completed?)
+    total_steps_count = length(steps)
 
-  progress_percentage =
-    if total_steps_count > 0,
-      do: round((completed_steps_count / total_steps_count) * 100),
-      else: 0
+    progress_percentage =
+      if total_steps_count > 0,
+        do: round(completed_steps_count / total_steps_count * 100),
+        else: 0
 
-  mock_chat_messages = [
-    %{
-      sender: "admin",
-      author: "Admin Verification Team",
-      time: "10:15 AM",
-      text: "Hello! We are reviewing your submitted documents. Please reach out here if you have any questions."
-    }
-  ]
+    flash_type = if status in ["rejected", "inquired"], do: :error, else: :info
 
-  {:ok,
-   socket
-   |> assign(:page_title, "Home - Verification Status")
-   |> assign(:landlord, landlord)
-   |> assign(:greeting, greeting())
-   |> assign(:first_name, first_name(landlord))
-   |> assign(:steps, steps)
-   |> assign(:active_tab, "1")
-   |> assign(:completed_steps_count, completed_steps_count)
-   |> assign(:total_steps_count, total_steps_count)
-   |> assign(:progress_percentage, progress_percentage)
-   |> assign(:show_chat, false)
-   |> assign(:chat_messages, mock_chat_messages)
-   |> assign(:message_text, "")
-   |> assign(:theme, "light")}
-end
+    flash_msg =
+      case status do
+        "approved" ->
+          if section == "Final Approval",
+            do: "Your account has been verified successfully.",
+            else: "#{section} has been approved!"
 
-@impl true
-def handle_info({:verification_status_updated, %{landlord: updated_landlord, section: section, status: status}}, socket) do
-  steps = build_verification_steps(updated_landlord)
-  completed_steps_count = Enum.count(steps, & &1.completed?)
-  total_steps_count = length(steps)
+        "rejected" ->
+          "Action required: #{section} needs revisions."
 
-  progress_percentage =
-    if total_steps_count > 0,
-      do: round((completed_steps_count / total_steps_count) * 100),
-      else: 0
+        "inquired" ->
+          "Admin sent an inquiry regarding your #{section}."
 
-  flash_type = if status in ["rejected", "inquired"], do: :error, else: :info
+        _ ->
+          "Verification status updated."
+      end
 
-  flash_msg = case status do
-    "approved" -> "#{section} has been approved!"
-    "rejected" -> "Action required: #{section} needs revisions."
-    "inquired" -> "Admin sent an inquiry regarding your #{section}."
-    _ -> "Verification status updated."
+    {:noreply,
+     socket
+     |> assign(:landlord, updated_landlord)
+     |> assign(:steps, steps)
+     |> assign(:completed_steps_count, completed_steps_count)
+     |> assign(:progress_percentage, progress_percentage)
+     |> assign(:show_verified_modal, updated_landlord.verification_status == "approved")
+     |> assign(:chat_messages, chat_messages_for_landlord(updated_landlord))
+     |> put_flash(flash_type, flash_msg)}
   end
-
-  {:noreply,
-   socket
-   |> assign(:landlord, updated_landlord)
-   |> assign(:steps, steps)
-   |> assign(:completed_steps_count, completed_steps_count)
-   |> assign(:progress_percentage, progress_percentage)
-   |> put_flash(flash_type, flash_msg)}
-end
-
 
   @impl true
   def handle_event("select_tab", %{"tab" => tab}, socket) do
@@ -102,6 +111,10 @@ end
 
   def handle_event("toggle_chat", _params, socket) do
     {:noreply, update(socket, :show_chat, &(!&1))}
+  end
+
+  def handle_event("continue_to_house", _params, socket) do
+    {:noreply, push_navigate(socket, to: ~p"/house")}
   end
 
   def handle_event("update_message", %{"message" => msg}, socket) do
@@ -139,7 +152,6 @@ end
       >
         <div class="min-h-screen">
           <div class="mx-auto flex min-h-screen w-full max-w-5xl flex-col px-4 py-6 sm:px-6 lg:px-8">
-
             <%!-- Top Centered Branding & Header Content --%>
             <header class={[
               "relative flex flex-col items-center justify-center border-b pb-6 text-center",
@@ -148,14 +160,52 @@ end
             ]}>
               <%!-- Theme Switcher & Progress Percentage (Top Right) --%>
               <div class="mb-4 flex items-center justify-end gap-3 sm:absolute sm:right-0 sm:top-0 sm:mb-0">
-                  <button type="button"
+                <button
+                  type="button"
                   phx-click="toggle_theme"
-                  class={[ "flex size-10 items-center justify-center rounded-full border transition active:scale-95", @theme == "dark" && "border-slate-700 bg-[#0e1626] text-amber-400 hover:bg-slate-800", @theme == "light" && "border-slate-300 bg-white text-slate-700 shadow-sm hover:bg-slate-100" ]} title={"Switch to #{if @theme == "dark", do: "Light", else: "Dark"} mode"} >
-                  <%= if @theme == "dark" do %> <!-- Sun icon - shown in dark mode -->
-                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-6" >
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v2.25m6.364.386-1.591 1.591M21 12h-2.25m-.386 6.364-1.591-1.591M12 18.75V21m-4.773-4.227-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0Z" />
-                  </svg>
-                  <% else %> <!-- Moon icon - shown in light mode --> <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-6" > <path stroke-linecap="round" stroke-linejoin="round" d="M21.752 15.002A9.72 9.72 0 0 1 18 15.75c-5.385 0-9.75-4.365-9.75-9.75c0-1.33.266-2.597.748-3.752A9.753 9.753 0 0 0 3 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 0 0 9.002-5.998Z" /> </svg> <% end %> </button>
+                  class={[
+                    "flex size-10 items-center justify-center rounded-full border transition active:scale-95",
+                    @theme == "dark" &&
+                      "border-slate-700 bg-[#0e1626] text-amber-400 hover:bg-slate-800",
+                    @theme == "light" &&
+                      "border-slate-300 bg-white text-slate-700 shadow-sm hover:bg-slate-100"
+                  ]}
+                  title={"Switch to #{if @theme == "dark", do: "Light", else: "Dark"} mode"}
+                >
+                  <%= if @theme == "dark" do %>
+                    <!-- Sun icon - shown in dark mode -->
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke-width="1.5"
+                      stroke="currentColor"
+                      class="size-6"
+                    >
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        d="M12 3v2.25m6.364.386-1.591 1.591M21 12h-2.25m-.386 6.364-1.591-1.591M12 18.75V21m-4.773-4.227-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0Z"
+                      />
+                    </svg>
+                  <% else %>
+                    <!-- Moon icon - shown in light mode -->
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke-width="1.5"
+                      stroke="currentColor"
+                      class="size-6"
+                    >
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        d="M21.752 15.002A9.72 9.72 0 0 1 18 15.75c-5.385 0-9.75-4.365-9.75-9.75c0-1.33.266-2.597.748-3.752A9.753 9.753 0 0 0 3 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 0 0 9.002-5.998Z"
+                      />
+                    </svg>
+                  <% end %>
+                </button>
 
                 <div class="text-right">
                   <p class={[
@@ -191,7 +241,8 @@ end
                   @theme == "dark" && "text-slate-400",
                   @theme == "light" && "text-slate-600"
                 ]}>
-                  Your documents have been submitted for verification steps.<br> ⚠️these are official documents avoid sharing this link with anyone
+                  Your documents have been submitted for verification steps.<br />
+                  ⚠️these are official documents avoid sharing this link with anyone
                 </p>
               </div>
 
@@ -247,7 +298,9 @@ end
                   "text-xs",
                   @theme == "dark" && "text-slate-500",
                   @theme == "light" && "text-slate-400"
-                ]}>Select step to view details</span>
+                ]}>
+                  Select step to view details
+                </span>
               </div>
 
               <div class="no-scrollbar flex gap-2 overflow-x-auto pb-2">
@@ -258,20 +311,35 @@ end
                   phx-value-tab={to_string(step.number)}
                   class={[
                     "flex shrink-0 items-center gap-2.5 rounded-xl border px-4 py-2.5 text-xs font-semibold transition",
-                    @active_tab == to_string(step.number) && "border-blue-600 bg-blue-600 text-white shadow-md",
-                    @active_tab != to_string(step.number) && step.completed? && @theme == "dark" && "border-emerald-500/40 bg-[#0e1626] text-emerald-400 hover:bg-slate-800",
-                    @active_tab != to_string(step.number) && step.completed? && @theme == "light" && "border-emerald-500/40 bg-white text-emerald-600 hover:bg-slate-50",
-                    @active_tab != to_string(step.number) && !step.completed? && @theme == "dark" && "border-slate-800 bg-[#0e1626] text-slate-400 hover:bg-slate-800",
-                    @active_tab != to_string(step.number) && !step.completed? && @theme == "light" && "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                    @active_tab == to_string(step.number) &&
+                      "border-blue-600 bg-blue-600 text-white shadow-md",
+                    @active_tab != to_string(step.number) && step.completed? && @theme == "dark" &&
+                      "border-emerald-500/40 bg-[#0e1626] text-emerald-400 hover:bg-slate-800",
+                    @active_tab != to_string(step.number) && step.completed? && @theme == "light" &&
+                      "border-emerald-500/40 bg-white text-emerald-600 hover:bg-slate-50",
+                    @active_tab != to_string(step.number) && !step.completed? && @theme == "dark" &&
+                      "border-slate-800 bg-[#0e1626] text-slate-400 hover:bg-slate-800",
+                    @active_tab != to_string(step.number) && !step.completed? && @theme == "light" &&
+                      "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
                   ]}
                 >
                   <span class={[
                     "flex size-5 items-center justify-center rounded-full text-[10px] font-bold",
                     step.completed? && "bg-emerald-500 text-white",
-                    !step.completed? && @theme == "dark" && "bg-slate-800 text-slate-300",
-                    !step.completed? && @theme == "light" && "bg-slate-200 text-slate-700"
+                    step.status == "rejected" && "bg-rose-500 text-white",
+                    !step.completed? && step.status != "rejected" && @theme == "dark" &&
+                      "bg-slate-800 text-slate-300",
+                    !step.completed? && step.status != "rejected" && @theme == "light" &&
+                      "bg-slate-200 text-slate-700"
                   ]}>
-                    {if step.completed?, do: "✓", else: step.number}
+                    <%= cond do %>
+                      <% step.completed? -> %>
+                        ✓
+                      <% step.status == "rejected" -> %>
+                        X
+                      <% true -> %>
+                        {step.number}
+                    <% end %>
                   </span>
                   <span>{step.number}. {step.title}</span>
                 </button>
@@ -280,7 +348,6 @@ end
 
             <%!-- Step-by-Step Sections --%>
             <main class="mt-6 flex-1 space-y-6 pb-28">
-
               <%!-- Step 1: Personal Details --%>
               <div
                 :if={@active_tab == "1"}
@@ -300,12 +367,19 @@ end
                       "text-lg font-bold",
                       @theme == "dark" && "text-white",
                       @theme == "light" && "text-slate-900"
-                    ]}>Personal details</h3>
-                    <span :if={has_value?(@landlord, :names)} class="flex items-center text-emerald-500">
+                    ]}>
+                      Personal details
+                    </h3>
+                    <span
+                      :if={has_value?(@landlord, :names)}
+                      class="flex items-center text-emerald-500"
+                    >
                       <.icon name="hero-check-circle-solid" class="size-5" />
                     </span>
                   </div>
-                  <button type="button" class="text-xs font-semibold text-blue-600 hover:underline">Edit</button>
+                  <button type="button" class="text-xs font-semibold text-blue-600 hover:underline">
+                    Edit
+                  </button>
                 </div>
 
                 <div class="mt-4 grid grid-cols-1 gap-y-3.5 gap-x-8 text-sm sm:grid-cols-2">
@@ -314,64 +388,88 @@ end
                     @theme == "dark" && "sm:border-slate-800/60",
                     @theme == "light" && "sm:border-slate-100"
                   ]}>
-                    <span class={if @theme == "dark", do: "text-slate-400", else: "text-slate-500"}>Category:</span>
+                    <span class={if @theme == "dark", do: "text-slate-400", else: "text-slate-500"}>
+                      Category:
+                    </span>
                     <span class={[
                       "font-medium capitalize",
                       @theme == "dark" && "text-slate-100",
                       @theme == "light" && "text-slate-900"
-                    ]}>{detail(@landlord, :entity_type)}</span>
+                    ]}>
+                      {detail(@landlord, :entity_type)}
+                    </span>
                   </div>
                   <div class={[
                     "flex flex-col sm:flex-row sm:justify-between sm:border-b sm:pb-2",
                     @theme == "dark" && "sm:border-slate-800/60",
                     @theme == "light" && "sm:border-slate-100"
                   ]}>
-                    <span class={if @theme == "dark", do: "text-slate-400", else: "text-slate-500"}>Name:</span>
+                    <span class={if @theme == "dark", do: "text-slate-400", else: "text-slate-500"}>
+                      Name:
+                    </span>
                     <span class={[
                       "font-medium",
                       @theme == "dark" && "text-slate-100",
                       @theme == "light" && "text-slate-900"
-                    ]}>{detail(@landlord, :names)}</span>
+                    ]}>
+                      {detail(@landlord, :names)}
+                    </span>
                   </div>
                   <div class={[
                     "flex flex-col sm:flex-row sm:justify-between sm:border-b sm:pb-2",
                     @theme == "dark" && "sm:border-slate-800/60",
                     @theme == "light" && "sm:border-slate-100"
                   ]}>
-                    <span class={if @theme == "dark", do: "text-slate-400", else: "text-slate-500"}>Email:</span>
+                    <span class={if @theme == "dark", do: "text-slate-400", else: "text-slate-500"}>
+                      Email:
+                    </span>
                     <span class={[
                       "break-all font-medium",
                       @theme == "dark" && "text-slate-100",
                       @theme == "light" && "text-slate-900"
-                    ]}>{detail(@landlord, :email)}</span>
+                    ]}>
+                      {detail(@landlord, :email)}
+                    </span>
                   </div>
                   <div class={[
                     "flex flex-col sm:flex-row sm:justify-between sm:border-b sm:pb-2",
                     @theme == "dark" && "sm:border-slate-800/60",
                     @theme == "light" && "sm:border-slate-100"
                   ]}>
-                    <span class={if @theme == "dark", do: "text-slate-400", else: "text-slate-500"}>Phone:</span>
+                    <span class={if @theme == "dark", do: "text-slate-400", else: "text-slate-500"}>
+                      Phone:
+                    </span>
                     <span class={[
                       "font-medium",
                       @theme == "dark" && "text-slate-100",
                       @theme == "light" && "text-slate-900"
-                    ]}>{detail(@landlord, :phone)}</span>
+                    ]}>
+                      {detail(@landlord, :phone)}
+                    </span>
                   </div>
                   <div class="flex flex-col sm:flex-row sm:justify-between">
-                    <span class={if @theme == "dark", do: "text-slate-400", else: "text-slate-500"}>WhatsApp:</span>
+                    <span class={if @theme == "dark", do: "text-slate-400", else: "text-slate-500"}>
+                      WhatsApp:
+                    </span>
                     <span class={[
                       "font-medium",
                       @theme == "dark" && "text-slate-100",
                       @theme == "light" && "text-slate-900"
-                    ]}>{detail(@landlord, :whatsapp_phone)}</span>
+                    ]}>
+                      {detail(@landlord, :whatsapp_phone)}
+                    </span>
                   </div>
                   <div class="flex flex-col sm:flex-row sm:justify-between">
-                    <span class={if @theme == "dark", do: "text-slate-400", else: "text-slate-500"}>Residence:</span>
+                    <span class={if @theme == "dark", do: "text-slate-400", else: "text-slate-500"}>
+                      Residence:
+                    </span>
                     <span class={[
                       "font-medium",
                       @theme == "dark" && "text-slate-100",
                       @theme == "light" && "text-slate-900"
-                    ]}>{detail(@landlord, :residence_location)}</span>
+                    ]}>
+                      {detail(@landlord, :residence_location)}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -395,12 +493,19 @@ end
                       "text-lg font-bold",
                       @theme == "dark" && "text-white",
                       @theme == "light" && "text-slate-900"
-                    ]}>Identity verification</h3>
-                    <span :if={has_value?(@landlord, :id_number)} class="flex items-center text-emerald-500">
+                    ]}>
+                      Identity verification
+                    </h3>
+                    <span
+                      :if={has_value?(@landlord, :id_number)}
+                      class="flex items-center text-emerald-500"
+                    >
                       <.icon name="hero-check-circle-solid" class="size-5" />
                     </span>
                   </div>
-                  <button type="button" class="text-xs font-semibold text-blue-600 hover:underline">Edit</button>
+                  <button type="button" class="text-xs font-semibold text-blue-600 hover:underline">
+                    Edit
+                  </button>
                 </div>
 
                 <div class="mt-4 grid grid-cols-1 gap-y-3.5 gap-x-8 text-sm sm:grid-cols-2">
@@ -409,38 +514,56 @@ end
                     @theme == "dark" && "sm:border-slate-800/60",
                     @theme == "light" && "sm:border-slate-100"
                   ]}>
-                    <span class={if @theme == "dark", do: "text-slate-400", else: "text-slate-500"}>Doc type:</span>
+                    <span class={if @theme == "dark", do: "text-slate-400", else: "text-slate-500"}>
+                      Doc type:
+                    </span>
                     <span class={[
                       "font-medium",
                       @theme == "dark" && "text-slate-100",
                       @theme == "light" && "text-slate-900"
-                    ]}>{detail(@landlord, :id_type)}</span>
+                    ]}>
+                      {detail(@landlord, :id_type)}
+                    </span>
                   </div>
                   <div class={[
                     "flex flex-col sm:flex-row sm:justify-between sm:border-b sm:pb-2",
                     @theme == "dark" && "sm:border-slate-800/60",
                     @theme == "light" && "sm:border-slate-100"
                   ]}>
-                    <span class={if @theme == "dark", do: "text-slate-400", else: "text-slate-500"}>Doc / ID no:</span>
+                    <span class={if @theme == "dark", do: "text-slate-400", else: "text-slate-500"}>
+                      Doc / ID no:
+                    </span>
                     <span class={[
                       "font-medium",
                       @theme == "dark" && "text-slate-100",
                       @theme == "light" && "text-slate-900"
-                    ]}>{detail(@landlord, :id_number)}</span>
+                    ]}>
+                      {detail(@landlord, :id_number)}
+                    </span>
                   </div>
                   <div class="flex flex-col sm:flex-row sm:justify-between">
-                    <span class={if @theme == "dark", do: "text-slate-400", else: "text-slate-500"}>KRA PIN:</span>
+                    <span class={if @theme == "dark", do: "text-slate-400", else: "text-slate-500"}>
+                      KRA PIN:
+                    </span>
                     <span class={[
                       "font-medium uppercase",
                       @theme == "dark" && "text-slate-100",
                       @theme == "light" && "text-slate-900"
-                    ]}>{detail(@landlord, :kra_pin)}</span>
+                    ]}>
+                      {detail(@landlord, :kra_pin)}
+                    </span>
                   </div>
                   <div class="flex flex-col sm:flex-row sm:justify-between">
-                    <span class={if @theme == "dark", do: "text-slate-400", else: "text-slate-500"}>Uploads status:</span>
+                    <span class={if @theme == "dark", do: "text-slate-400", else: "text-slate-500"}>
+                      Uploads status:
+                    </span>
                     <span class="font-medium text-emerald-500">
-                      {if has_doc?(@landlord, "id_front") or has_value?(@landlord, :id_front_url), do: "Front attached, ", else: ""}
-                      {if has_doc?(@landlord, "id_back") or has_value?(@landlord, :id_back_url), do: "Back attached", else: "Pending uploads"}
+                      {if has_doc?(@landlord, "id_front") or has_value?(@landlord, :id_front_url),
+                        do: "Front attached, ",
+                        else: ""}
+                      {if has_doc?(@landlord, "id_back") or has_value?(@landlord, :id_back_url),
+                        do: "Back attached",
+                        else: "Pending uploads"}
                     </span>
                   </div>
                 </div>
@@ -497,12 +620,19 @@ end
                       "text-lg font-bold",
                       @theme == "dark" && "text-white",
                       @theme == "light" && "text-slate-900"
-                    ]}>Property details</h3>
-                    <span :if={has_value?(@landlord, :property_name)} class="flex items-center text-emerald-500">
+                    ]}>
+                      Property details
+                    </h3>
+                    <span
+                      :if={has_value?(@landlord, :property_name)}
+                      class="flex items-center text-emerald-500"
+                    >
                       <.icon name="hero-check-circle-solid" class="size-5" />
                     </span>
                   </div>
-                  <button type="button" class="text-xs font-semibold text-blue-600 hover:underline">Edit</button>
+                  <button type="button" class="text-xs font-semibold text-blue-600 hover:underline">
+                    Edit
+                  </button>
                 </div>
 
                 <div class="mt-4 grid grid-cols-1 gap-y-3.5 gap-x-8 text-sm sm:grid-cols-2">
@@ -511,64 +641,88 @@ end
                     @theme == "dark" && "sm:border-slate-800/60",
                     @theme == "light" && "sm:border-slate-100"
                   ]}>
-                    <span class={if @theme == "dark", do: "text-slate-400", else: "text-slate-500"}>Intent:</span>
+                    <span class={if @theme == "dark", do: "text-slate-400", else: "text-slate-500"}>
+                      Intent:
+                    </span>
                     <span class={[
                       "font-medium capitalize",
                       @theme == "dark" && "text-slate-100",
                       @theme == "light" && "text-slate-900"
-                    ]}>{detail(@landlord, :listing_purpose)}</span>
+                    ]}>
+                      {detail(@landlord, :listing_purpose)}
+                    </span>
                   </div>
                   <div class={[
                     "flex flex-col sm:flex-row sm:justify-between sm:border-b sm:pb-2",
                     @theme == "dark" && "sm:border-slate-800/60",
                     @theme == "light" && "sm:border-slate-100"
                   ]}>
-                    <span class={if @theme == "dark", do: "text-slate-400", else: "text-slate-500"}>Property name:</span>
+                    <span class={if @theme == "dark", do: "text-slate-400", else: "text-slate-500"}>
+                      Property name:
+                    </span>
                     <span class={[
                       "font-medium",
                       @theme == "dark" && "text-slate-100",
                       @theme == "light" && "text-slate-900"
-                    ]}>{detail(@landlord, :property_name)}</span>
+                    ]}>
+                      {detail(@landlord, :property_name)}
+                    </span>
                   </div>
                   <div class={[
                     "flex flex-col sm:flex-row sm:justify-between sm:border-b sm:pb-2",
                     @theme == "dark" && "sm:border-slate-800/60",
                     @theme == "light" && "sm:border-slate-100"
                   ]}>
-                    <span class={if @theme == "dark", do: "text-slate-400", else: "text-slate-500"}>Location:</span>
+                    <span class={if @theme == "dark", do: "text-slate-400", else: "text-slate-500"}>
+                      Location:
+                    </span>
                     <span class={[
                       "font-medium",
                       @theme == "dark" && "text-slate-100",
                       @theme == "light" && "text-slate-900"
-                    ]}>{detail(@landlord, :property_location)}</span>
+                    ]}>
+                      {detail(@landlord, :property_location)}
+                    </span>
                   </div>
                   <div class={[
                     "flex flex-col sm:flex-row sm:justify-between sm:border-b sm:pb-2",
                     @theme == "dark" && "sm:border-slate-800/60",
                     @theme == "light" && "sm:border-slate-100"
                   ]}>
-                    <span class={if @theme == "dark", do: "text-slate-400", else: "text-slate-500"}>Ownership type:</span>
+                    <span class={if @theme == "dark", do: "text-slate-400", else: "text-slate-500"}>
+                      Ownership type:
+                    </span>
                     <span class={[
                       "font-medium",
                       @theme == "dark" && "text-slate-100",
                       @theme == "light" && "text-slate-900"
-                    ]}>{detail(@landlord, :ownership_type)}</span>
+                    ]}>
+                      {detail(@landlord, :ownership_type)}
+                    </span>
                   </div>
                   <div class="flex flex-col sm:flex-row sm:justify-between">
-                    <span class={if @theme == "dark", do: "text-slate-400", else: "text-slate-500"}>Title / LR no:</span>
+                    <span class={if @theme == "dark", do: "text-slate-400", else: "text-slate-500"}>
+                      Title / LR no:
+                    </span>
                     <span class={[
                       "font-medium",
                       @theme == "dark" && "text-slate-100",
                       @theme == "light" && "text-slate-900"
-                    ]}>{detail(@landlord, :lr_number)}</span>
+                    ]}>
+                      {detail(@landlord, :lr_number)}
+                    </span>
                   </div>
                   <div class="flex flex-col sm:flex-row sm:justify-between">
-                    <span class={if @theme == "dark", do: "text-slate-400", else: "text-slate-500"}>Total units:</span>
+                    <span class={if @theme == "dark", do: "text-slate-400", else: "text-slate-500"}>
+                      Total units:
+                    </span>
                     <span class={[
                       "font-medium",
                       @theme == "dark" && "text-slate-100",
                       @theme == "light" && "text-slate-900"
-                    ]}>{detail(@landlord, :total_units)}</span>
+                    ]}>
+                      {detail(@landlord, :total_units)}
+                    </span>
                   </div>
                 </div>
 
@@ -614,35 +768,159 @@ end
                       "text-lg font-bold",
                       @theme == "dark" && "text-white",
                       @theme == "light" && "text-slate-900"
-                    ]}>Billing & payment</h3>
-                    <span :if={has_value?(@landlord, :billing_method)} class="flex items-center text-emerald-500">
+                    ]}>
+                      Billing & payment
+                    </h3>
+                    <span
+                      :if={has_value?(@landlord, :billing_method)}
+                      class="flex items-center text-emerald-500"
+                    >
                       <.icon name="hero-check-circle-solid" class="size-5" />
                     </span>
                   </div>
-                  <button type="button" class="text-xs font-semibold text-blue-600 hover:underline">Edit</button>
+                  <button type="button" class="text-xs font-semibold text-blue-600 hover:underline">
+                    Edit
+                  </button>
                 </div>
 
                 <div class="mt-4 grid grid-cols-1 gap-y-3.5 gap-x-8 text-sm sm:grid-cols-2">
                   <div class="flex flex-col sm:flex-row sm:justify-between">
-                    <span class={if @theme == "dark", do: "text-slate-400", else: "text-slate-500"}>Billing method:</span>
+                    <span class={if @theme == "dark", do: "text-slate-400", else: "text-slate-500"}>
+                      Billing method:
+                    </span>
                     <span class={[
                       "font-medium",
                       @theme == "dark" && "text-slate-100",
                       @theme == "light" && "text-slate-900"
-                    ]}>{detail(@landlord, :billing_method)}</span>
+                    ]}>
+                      {detail(@landlord, :billing_method)}
+                    </span>
                   </div>
                   <div class="flex flex-col sm:flex-row sm:justify-between">
-                    <span class={if @theme == "dark", do: "text-slate-400", else: "text-slate-500"}>Billing phone:</span>
+                    <span class={if @theme == "dark", do: "text-slate-400", else: "text-slate-500"}>
+                      Billing phone:
+                    </span>
                     <span class={[
                       "font-medium",
                       @theme == "dark" && "text-slate-100",
                       @theme == "light" && "text-slate-900"
-                    ]}>{detail(@landlord, :billing_phone)}</span>
+                    ]}>
+                      {detail(@landlord, :billing_phone)}
+                    </span>
                   </div>
                 </div>
               </div>
 
+              <%!-- Step 5: Final Approval --%>
+              <div
+                :if={@active_tab == "5"}
+                id="landlord-final-approval-step"
+                class={[
+                  "rounded-2xl border p-5 transition-all sm:p-6",
+                  @theme == "dark" && "border-slate-800 bg-[#0e1626] shadow-xl",
+                  @theme == "light" && "border-slate-200 bg-white shadow-sm"
+                ]}
+              >
+                <div class={[
+                  "flex items-center justify-between border-b pb-3",
+                  @theme == "dark" && "border-slate-800",
+                  @theme == "light" && "border-slate-200"
+                ]}>
+                  <div class="flex items-center gap-2.5">
+                    <h3 class={[
+                      "text-lg font-bold",
+                      @theme == "dark" && "text-white",
+                      @theme == "light" && "text-slate-900"
+                    ]}>
+                      Final approval
+                    </h3>
+                    <span
+                      :if={@landlord.verification_status == "approved"}
+                      class="flex items-center text-emerald-500"
+                    >
+                      <.icon name="hero-check-circle-solid" class="size-5" />
+                    </span>
+                    <span
+                      :if={@landlord.verification_status == "rejected"}
+                      class="flex items-center text-rose-500"
+                    >
+                      <.icon name="hero-x-circle" class="size-5" />
+                    </span>
+                  </div>
+                </div>
+
+                <div class="mt-4 space-y-3 text-sm">
+                  <p class={[
+                    @theme == "dark" && "text-slate-300",
+                    @theme == "light" && "text-slate-700"
+                  ]}>
+                    <%= case @landlord.verification_status do %>
+                      <% "approved" -> %>
+                        Your account has been verified successfully for sharing properties marked for {@landlord.listing_purpose ||
+                          "your selected purpose"}.
+                      <% "rejected" -> %>
+                        Your verification was not approved yet. Please check the sections marked with X and the support chat for what needs to be corrected.
+                      <% "inquired" -> %>
+                        The admin has asked for clarification. Open verification support to see what needs attention.
+                      <% _ -> %>
+                        Your final approval is still pending while the admin reviews the submitted documents.
+                    <% end %>
+                  </p>
+
+                  <button
+                    :if={@landlord.verification_status == "approved"}
+                    id="continue-to-house"
+                    type="button"
+                    phx-click="continue_to_house"
+                    class="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-emerald-700"
+                  >
+                    <.icon name="hero-arrow-right-circle" class="size-4" />
+                    <span>Continue to House</span>
+                  </button>
+                </div>
+              </div>
             </main>
+
+            <div
+              :if={@show_verified_modal}
+              id="landlord-approved-modal"
+              class="fixed inset-0 z-50 flex items-center justify-center p-4"
+            >
+              <div class="fixed inset-0 bg-slate-950/70 backdrop-blur-sm"></div>
+              <div class={[
+                "relative z-10 w-full max-w-md rounded-2xl border p-6 text-center shadow-2xl",
+                @theme == "dark" && "border-slate-800 bg-[#0e1626]",
+                @theme == "light" && "border-slate-200 bg-white"
+              ]}>
+                <div class="mx-auto flex size-14 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600">
+                  <.icon name="hero-check-circle-solid" class="size-9" />
+                </div>
+                <h3 class={[
+                  "mt-4 text-lg font-bold",
+                  @theme == "dark" && "text-white",
+                  @theme == "light" && "text-slate-900"
+                ]}>
+                  Your account has been verified successfully
+                </h3>
+                <p class={[
+                  "mt-2 text-sm",
+                  @theme == "dark" && "text-slate-300",
+                  @theme == "light" && "text-slate-600"
+                ]}>
+                  You can now share properties for {@landlord.listing_purpose ||
+                    "your selected purpose"}. Continue to the house dashboard to add or manage your listings.
+                </p>
+                <button
+                  id="approved-modal-continue"
+                  type="button"
+                  phx-click="continue_to_house"
+                  class="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700"
+                >
+                  <.icon name="hero-home-modern" class="size-5" />
+                  <span>Go to House</span>
+                </button>
+              </div>
+            </div>
 
             <%!-- Responsive Floating Chat Button --%>
             <div class="fixed bottom-4 right-4 z-40 sm:bottom-6 sm:right-6">
@@ -653,16 +931,21 @@ end
               >
                 <.icon name="hero-chat-bubble-left-right" class="size-5 sm:size-6" />
                 <span>Verification Support</span>
-                <span :if={length(@chat_messages) > 0} class="flex size-2 rounded-full bg-emerald-400"></span>
+                <span :if={length(@chat_messages) > 0} class="flex size-2 rounded-full bg-emerald-400">
+                </span>
               </button>
             </div>
 
             <%!-- Verification Support Chat Modal --%>
-            <div :if={@show_chat} class="fixed inset-0 z-50 flex flex-col justify-end sm:items-end sm:p-6">
+            <div
+              :if={@show_chat}
+              class="fixed inset-0 z-50 flex flex-col justify-end sm:items-end sm:p-6"
+            >
               <div
                 class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity"
                 phx-click="toggle_chat"
-              ></div>
+              >
+              </div>
 
               <div class={[
                 "relative z-10 flex h-[85vh] max-h-[550px] w-full flex-col overflow-hidden rounded-t-2xl border shadow-2xl sm:h-[500px] sm:w-[420px] sm:rounded-2xl",
@@ -684,7 +967,9 @@ end
                         "text-xs font-bold sm:text-sm",
                         @theme == "dark" && "text-white",
                         @theme == "light" && "text-slate-900"
-                      ]}>Verification Support</h4>
+                      ]}>
+                        Verification Support
+                      </h4>
                       <p class="text-[10px] font-medium text-emerald-500">Direct Message Admin</p>
                     </div>
                   </div>
@@ -715,12 +1000,16 @@ end
                       "mb-1 text-[10px]",
                       @theme == "dark" && "text-slate-400",
                       @theme == "light" && "text-slate-500"
-                    ]}>{msg.author} • {msg.time}</span>
+                    ]}>
+                      {msg.author} • {msg.time}
+                    </span>
                     <div class={[
                       "rounded-2xl px-3.5 py-2 text-xs leading-relaxed sm:text-sm",
                       msg.sender == "landlord" && "bg-blue-600 text-white rounded-br-none",
-                      msg.sender != "landlord" && @theme == "dark" && "bg-slate-800 text-slate-200 border border-slate-700 rounded-bl-none",
-                      msg.sender != "landlord" && @theme == "light" && "bg-slate-100 text-slate-800 border border-slate-200 rounded-bl-none"
+                      msg.sender != "landlord" && @theme == "dark" &&
+                        "bg-slate-800 text-slate-200 border border-slate-700 rounded-bl-none",
+                      msg.sender != "landlord" && @theme == "light" &&
+                        "bg-slate-100 text-slate-800 border border-slate-200 rounded-bl-none"
                     ]}>
                       {msg.text}
                     </div>
@@ -728,11 +1017,14 @@ end
                 </div>
 
                 <%!-- Input Form --%>
-                <form phx-submit="send_message" class={[
-                  "border-t p-3",
-                  @theme == "dark" && "border-slate-800 bg-[#090d16]",
-                  @theme == "light" && "border-slate-200 bg-slate-50"
-                ]}>
+                <form
+                  phx-submit="send_message"
+                  class={[
+                    "border-t p-3",
+                    @theme == "dark" && "border-slate-800 bg-[#090d16]",
+                    @theme == "light" && "border-slate-200 bg-slate-50"
+                  ]}
+                >
                   <div class="flex items-center gap-2">
                     <input
                       type="text"
@@ -742,8 +1034,10 @@ end
                       placeholder="Type a message to admin..."
                       class={[
                         "flex-1 rounded-xl border px-3 py-2 text-xs focus:border-blue-600 focus:outline-none",
-                        @theme == "dark" && "border-slate-700 bg-[#0e1626] text-white placeholder-slate-500",
-                        @theme == "light" && "border-slate-300 bg-white text-slate-900 placeholder-slate-400"
+                        @theme == "dark" &&
+                          "border-slate-700 bg-[#0e1626] text-white placeholder-slate-500",
+                        @theme == "light" &&
+                          "border-slate-300 bg-white text-slate-900 placeholder-slate-400"
                       ]}
                     />
                     <button
@@ -756,7 +1050,6 @@ end
                 </form>
               </div>
             </div>
-
           </div>
         </div>
       </section>
@@ -786,14 +1079,20 @@ end
           </p>
         </div>
 
-        <span :if={@url} class="rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-500">
+        <span
+          :if={@url}
+          class="rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-500"
+        >
           Active
         </span>
-        <span :if={!@url} class={[
-          "rounded px-1.5 py-0.5 text-[10px]",
-          @theme == "dark" && "bg-slate-800 text-slate-400",
-          @theme == "light" && "bg-slate-200 text-slate-500"
-        ]}>
+        <span
+          :if={!@url}
+          class={[
+            "rounded px-1.5 py-0.5 text-[10px]",
+            @theme == "dark" && "bg-slate-800 text-slate-400",
+            @theme == "light" && "bg-slate-200 text-slate-500"
+          ]}
+        >
           Missing
         </span>
       </div>
@@ -854,34 +1153,117 @@ end
 
   defp build_verification_steps(nil), do: []
 
-defp build_verification_steps(landlord) do
-  [
+  defp build_verification_steps(landlord) do
+    [
+      %{
+        number: 1,
+        title: "Personal details",
+        completed?: landlord.personal_details_status == "approved",
+        status: landlord.personal_details_status
+      },
+      %{
+        number: 2,
+        title: "Identity verification",
+        completed?: landlord.identity_status == "approved",
+        status: landlord.identity_status
+      },
+      %{
+        number: 3,
+        title: "Property details",
+        completed?: landlord.property_status == "approved",
+        status: landlord.property_status
+      },
+      %{
+        number: 4,
+        title: "Billing & payment",
+        completed?: landlord.billing_status == "approved",
+        status: landlord.billing_status
+      },
+      %{
+        number: 5,
+        title: "Final approval",
+        completed?: landlord.verification_status == "approved",
+        status: landlord.verification_status
+      }
+    ]
+  end
+
+  defp chat_messages_for_landlord(nil), do: default_chat_messages()
+
+  defp chat_messages_for_landlord(landlord) do
+    landlord
+    |> Map.get(:admin_notes, %{})
+    |> notes_to_chat_messages()
+    |> case do
+      [] -> default_chat_messages()
+      messages -> default_chat_messages() ++ messages
+    end
+  end
+
+  defp notes_to_chat_messages(notes) when is_map(notes) do
+    notes
+    |> Enum.flat_map(fn {section, entry} ->
+      section_title = human_section(section)
+
+      cond do
+        is_list(entry) ->
+          Enum.map(entry, &note_message(section_title, &1))
+
+        is_binary(entry) and entry != "" ->
+          [
+            note_message(section_title, %{
+              "sender" => "admin",
+              "text" => entry,
+              "time" => "Earlier"
+            })
+          ]
+
+        true ->
+          []
+      end
+    end)
+  end
+
+  defp notes_to_chat_messages(_notes), do: []
+
+  defp note_message(section, %{"text" => text} = message) do
+    sender = Map.get(message, "sender", "admin")
+
     %{
-      number: 1,
-      title: "Personal details",
-      completed?: landlord.personal_details_status == "approved",
-      status: landlord.personal_details_status
-    },
-    %{
-      number: 2,
-      title: "Identity verification",
-      completed?: landlord.identity_status == "approved",
-      status: landlord.identity_status
-    },
-    %{
-      number: 3,
-      title: "Property details",
-      completed?: landlord.property_status == "approved",
-      status: landlord.property_status
-    },
-    %{
-      number: 4,
-      title: "Billing & payment",
-      completed?: landlord.billing_status == "approved",
-      status: landlord.billing_status
+      sender: sender,
+      author: if(sender == "landlord", do: "You", else: "Admin Verification Team"),
+      time: Map.get(message, "time", "Earlier"),
+      text: "#{section}: #{text}"
     }
-  ]
-end
+  end
+
+  defp note_message(section, message) when is_map(message) do
+    note_message(section, %{
+      "sender" => Map.get(message, :sender, "admin"),
+      "text" => Map.get(message, :text, ""),
+      "time" => Map.get(message, :time, "Earlier")
+    })
+  end
+
+  defp default_chat_messages do
+    [
+      %{
+        sender: "admin",
+        author: "Admin Verification Team",
+        time: "10:15 AM",
+        text:
+          "Hello! We are reviewing your submitted documents. Please reach out here if you have any questions."
+      }
+    ]
+  end
+
+  defp human_section(section) do
+    section
+    |> to_string()
+    |> String.replace("_", " ")
+    |> String.split(" ", trim: true)
+    |> Enum.map_join(" ", &String.capitalize/1)
+  end
 
   defp greeting do
     hour =

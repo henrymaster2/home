@@ -37,7 +37,6 @@ defmodule Home.Accounts.Landlord do
     field :verification_status, :string, default: "pending"
     field :admin_notes, :map, default: %{}
 
-
     belongs_to :user, Home.Accounts.User
     belongs_to :verification_request, Home.Accounts.VerificationRequest
     has_many :documents, Home.Accounts.LandlordDocument
@@ -101,19 +100,19 @@ defmodule Home.Accounts.Landlord do
 
   # verification status changeset
   def verification_changeset(landlord, attrs) do
-  landlord
-  |> cast(attrs, [
-    :personal_details_status,
-    :identity_status,
-    :property_status,
-    :billing_status,
-    :verification_status,
-    :admin_notes
-  ])
-  |> validate_inclusion(:personal_details_status, @valid_statuses)
-  |> validate_inclusion(:identity_status, @valid_statuses)
-  |> validate_inclusion(:property_status, @valid_statuses)
-  |> validate_inclusion(:billing_status, @valid_statuses)
-  |> validate_inclusion(:verification_status, @valid_statuses)
-end
+    landlord
+    |> cast(attrs, [
+      :personal_details_status,
+      :identity_status,
+      :property_status,
+      :billing_status,
+      :verification_status,
+      :admin_notes
+    ])
+    |> validate_inclusion(:personal_details_status, @valid_statuses)
+    |> validate_inclusion(:identity_status, @valid_statuses)
+    |> validate_inclusion(:property_status, @valid_statuses)
+    |> validate_inclusion(:billing_status, @valid_statuses)
+    |> validate_inclusion(:verification_status, @valid_statuses)
+  end
 end
