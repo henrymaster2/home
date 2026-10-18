@@ -4,6 +4,8 @@ defmodule HomeWeb.Lite.DashboardLive do
 
   @impl true
   def mount(_params, _session, socket) do
+    current_user = socket.assigns.current_scope.user
+    if current_user.role == "admin_lite" do
     # Subscribe to verification requests for realtime updates
     if connected?(socket) do
       Accounts.subscribe_verification_requests()
@@ -11,7 +13,6 @@ defmodule HomeWeb.Lite.DashboardLive do
 
     # Fetch initial requests from DB
     verification_requests = Accounts.list_verification_requests()
-    current_user = socket.assigns.current_scope.user
 
     socket =
       socket
@@ -37,7 +38,15 @@ defmodule HomeWeb.Lite.DashboardLive do
       )
 
     {:ok, socket}
+    else
+  {:ok,
+  socket
+  |> put_flash(:error, "unauthorized access. You do not have permission to view this page.")
+  |> redirect(to: ~p"/users/log-in")
+
+  }
   end
+end
 
   @impl true
   def handle_event("toggle_theme", _, socket) do
@@ -407,7 +416,7 @@ defmodule HomeWeb.Lite.DashboardLive do
               <span>Add Landlord</span>
             </button>
           </div>
-          
+
     <!--first card balance card-->
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
             <div
@@ -634,7 +643,7 @@ defmodule HomeWeb.Lite.DashboardLive do
                 <span class="text-violet-400 font-semibold">Fully Verified</span>
               </div>
             </div>
-            
+
     <!--second card-->
             <% total_count = length(@landlords)
             pending_count = Enum.count(@landlords, &(Map.get(&1, :status) == "pending"))
@@ -681,7 +690,7 @@ defmodule HomeWeb.Lite.DashboardLive do
                   Verified
                 </button>
               </div>
-              
+
     <!-- Header -->
               <div class="mb-5 flex items-start justify-between">
                 <div>
@@ -711,7 +720,7 @@ defmodule HomeWeb.Lite.DashboardLive do
                   <i class="h-1.5 w-1.5 rounded-full bg-emerald-500"></i> Active
                 </span>
               </div>
-              
+
     <!-- Metrics -->
               <div class="grid grid-cols-2 gap-3">
                 <div
@@ -784,7 +793,7 @@ defmodule HomeWeb.Lite.DashboardLive do
                   </p>
                 </div>
               </div>
-              
+
     <!-- Progress -->
               <div class="mt-4">
                 <div class="mb-1.5 flex justify-between text-[10px]" style="color: var(--text-muted);">
@@ -891,7 +900,7 @@ defmodule HomeWeb.Lite.DashboardLive do
               </div>
             </div>
           </div>
-          
+
     <!-- LANDLORD REQUESTS TABLE -->
           <div
             class="rounded-xl overflow-hidden border border-[var(--border)]"

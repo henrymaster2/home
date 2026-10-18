@@ -564,19 +564,20 @@ defmodule Home.Accounts do
   @doc """
   Lists all verification requests and attaches active landlord invite URLs to each item.
   """
-  def list_verification_requests do
+ def list_verification_requests do
   import Ecto.Query
 
-  # 1. Fetch ONLY admin_lite verification requests
   requests =
-    from(v in VerificationRequest,
-      where: v.role == "admin_lite"
+    from(v in Home.Accounts.VerificationRequest,
+      join: u in Home.Accounts.User,
+      on: u.email == v.email,
+      where: u.role == "admin_lite",
+      select: v
     )
     |> Repo.all()
 
   now = DateTime.utc_now()
 
-  # 2. Fetch active, unexpired landlord invites
   active_invites =
     from(i in AdminLiteInvite,
       where: i.invite_type == "landlord" and i.expires_at > ^now and i.used == false,
@@ -588,7 +589,6 @@ defmodule Home.Accounts do
 
   base_url = HomeWeb.Endpoint.url()
 
-  # 3. Attach active invite links
   Enum.map(requests, fn request ->
     invite = Map.get(active_invites, request.email)
 
