@@ -565,41 +565,46 @@ defmodule Home.Accounts do
   Lists all verification requests and attaches active landlord invite URLs to each item.
   """
   def list_verification_requests do
-    # 1. Fetch all verification requests
-    requests = Repo.all(VerificationRequest)
+  import Ecto.Query
 
-    # 2. Get current time
-    now = DateTime.utc_now()
+  # 1. Fetch ONLY admin_lite verification requests
+  requests =
+    from(v in VerificationRequest,
+      where: v.role == "admin_lite"
+    )
+    |> Repo.all()
 
-    # 3. Fetch active, unexpired landlord invites using AdminLiteInvite
-    active_invites =
-      from(i in AdminLiteInvite,
-        where: i.invite_type == "landlord" and i.expires_at > ^now and i.used == false,
-        order_by: [desc: i.inserted_at]
-      )
-      |> Repo.all()
-      |> Enum.uniq_by(& &1.email)
-      |> Map.new(fn invite -> {invite.email, invite} end)
+  now = DateTime.utc_now()
 
-    base_url = HomeWeb.Endpoint.url()
+  # 2. Fetch active, unexpired landlord invites
+  active_invites =
+    from(i in AdminLiteInvite,
+      where: i.invite_type == "landlord" and i.expires_at > ^now and i.used == false,
+      order_by: [desc: i.inserted_at]
+    )
+    |> Repo.all()
+    |> Enum.uniq_by(& &1.email)
+    |> Map.new(fn invite -> {invite.email, invite} end)
 
-    # 4. Attach active invite link to each request item
-    Enum.map(requests, fn request ->
-      invite = Map.get(active_invites, request.email)
+  base_url = HomeWeb.Endpoint.url()
 
-      invite_url =
-        if invite do
-          "#{base_url}/verification?token=#{invite.token}"
-        else
-          nil
-        end
+  # 3. Attach active invite links
+  Enum.map(requests, fn request ->
+    invite = Map.get(active_invites, request.email)
 
-      request
-      |> Map.from_struct()
-      |> Map.put(:active_invite, invite)
-      |> Map.put(:invite_url, invite_url)
-    end)
-  end
+    invite_url =
+      if invite do
+        "#{base_url}/verification?token=#{invite.token}"
+      else
+        nil
+      end
+
+    request
+    |> Map.from_struct()
+    |> Map.put(:active_invite, invite)
+    |> Map.put(:invite_url, invite_url)
+  end)
+end
 
   @doc """
   Checks for an active, unexpired landlord invite associated with the specified email address.
