@@ -70,6 +70,7 @@ defmodule HomeWeb.Router do
       live "/admin/property", Admin.PropertyLive
       live "/home", Lite.DashboardLive
       live "/verify", Verify.Text
+      live "/landlords", Lite.Landlords
       # settings
       live "/users/settings", UserLive.Settings, :edit
       live "/users/settings/confirm-email/:token", UserLive.Settings, :confirm_email

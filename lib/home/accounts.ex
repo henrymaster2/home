@@ -564,47 +564,40 @@ defmodule Home.Accounts do
   @doc """
   Lists all verification requests and attaches active landlord invite URLs to each item.
   """
- def list_verification_requests do
-  import Ecto.Query
+  def list_verification_requests do
+    import Ecto.Query
 
-  requests =
-    from(v in Home.Accounts.VerificationRequest,
-      join: u in Home.Accounts.User,
-      on: u.email == v.email,
-      where: u.role == "admin_lite",
-      select: v
-    )
-    |> Repo.all()
+    requests = Repo.all(Home.Accounts.VerificationRequest)
 
-  now = DateTime.utc_now()
+    now = DateTime.utc_now()
 
-  active_invites =
-    from(i in AdminLiteInvite,
-      where: i.invite_type == "landlord" and i.expires_at > ^now and i.used == false,
-      order_by: [desc: i.inserted_at]
-    )
-    |> Repo.all()
-    |> Enum.uniq_by(& &1.email)
-    |> Map.new(fn invite -> {invite.email, invite} end)
+    active_invites =
+      from(i in AdminLiteInvite,
+        where: i.invite_type == "landlord" and i.expires_at > ^now and i.used == false,
+        order_by: [desc: i.inserted_at]
+      )
+      |> Repo.all()
+      |> Enum.uniq_by(& &1.email)
+      |> Map.new(fn invite -> {invite.email, invite} end)
 
-  base_url = HomeWeb.Endpoint.url()
+    base_url = HomeWeb.Endpoint.url()
 
-  Enum.map(requests, fn request ->
-    invite = Map.get(active_invites, request.email)
+    Enum.map(requests, fn request ->
+      invite = Map.get(active_invites, request.email)
 
-    invite_url =
-      if invite do
-        "#{base_url}/verification?token=#{invite.token}"
-      else
-        nil
-      end
+      invite_url =
+        if invite do
+          "#{base_url}/verification?token=#{invite.token}"
+        else
+          nil
+        end
 
-    request
-    |> Map.from_struct()
-    |> Map.put(:active_invite, invite)
-    |> Map.put(:invite_url, invite_url)
-  end)
-end
+      request
+      |> Map.from_struct()
+      |> Map.put(:active_invite, invite)
+      |> Map.put(:invite_url, invite_url)
+    end)
+  end
 
   @doc """
   Checks for an active, unexpired landlord invite associated with the specified email address.
@@ -700,6 +693,22 @@ end
     |> Repo.preload(:documents)
   end
 
+  @doc "Lists landlords whose verification is approved, with their documents preloaded."
+  def list_verified_landlords_with_documents do
+    Landlord
+    |> where([landlord], landlord.verification_status == "approved")
+    |> order_by([landlord], asc: landlord.names)
+    |> Repo.all()
+    |> Repo.preload([:documents, :verification_request])
+  end
+
+  @doc "Counts landlords whose verification is approved."
+  def count_verified_landlords do
+    Landlord
+    |> where([landlord], landlord.verification_status == "approved")
+    |> Repo.aggregate(:count, :id)
+  end
+
   @doc """
   Gets the landlord profile attached to a user with verification documents preloaded.
   """
@@ -766,6 +775,9 @@ end
 
     landlord_attrs =
       form_data
+      |> Map.drop(["password", "password_confirmation"])
+      |> Map.put("registration_data", Map.drop(form_data, ["password", "password_confirmation"]))
+      |> Map.put("enable_direct_payouts", Map.get(form_data, "enable_payouts"))
       |> Map.put("user_id", user.id)
       |> Map.put("verification_request_id", verification_request && verification_request.id)
 
@@ -1013,6 +1025,88 @@ end
       {:error, changeset} ->
         {:error, changeset}
     end
+  end
+
+  def mark_section_messages_read(landlord, section_key, reader)
+      when reader in ["admin", "landlord"] do
+    notes = landlord.admin_notes || %{}
+    requested_section = normalized_section(section_key)
+
+    section_key =
+      Enum.find(Map.keys(notes), &(normalized_section(&1) == requested_section)) ||
+        to_string(section_key)
+
+    entry = Map.get(notes, section_key, [])
+
+    messages =
+      case entry do
+        list when is_list(list) ->
+          list
+
+        message when is_binary(message) and message != "" ->
+          [%{"sender" => "admin", "text" => message, "time" => "Earlier"}]
+
+        _ ->
+          []
+      end
+
+    incoming_sender = if reader == "admin", do: "landlord", else: "admin"
+    read_field = "read_by_#{reader}"
+
+    updated_messages =
+      Enum.map(messages, fn message ->
+        sender = Map.get(message, "sender", Map.get(message, :sender, "admin"))
+
+        if sender == incoming_sender do
+          Map.put(message, read_field, true)
+        else
+          message
+        end
+      end)
+
+    updated_notes =
+      if updated_messages == messages do
+        notes
+      else
+        Map.put(notes, section_key, updated_messages)
+      end
+
+    if updated_notes == notes do
+      {:ok, landlord}
+    else
+      landlord
+      |> Landlord.verification_changeset(%{admin_notes: updated_notes})
+      |> Repo.update()
+      |> case do
+        {:ok, updated_landlord} = result ->
+          broadcast_message_update(updated_landlord)
+          result
+
+        error ->
+          error
+      end
+    end
+  end
+
+  defp broadcast_message_update(landlord) do
+    Phoenix.PubSub.broadcast(
+      @pubsub,
+      "landlord_verification:#{landlord.id}",
+      {:landlord_message_updated, landlord}
+    )
+
+    Phoenix.PubSub.broadcast(
+      @pubsub,
+      "admin_verifications",
+      {:landlord_message_updated, landlord}
+    )
+  end
+
+  defp normalized_section(section) do
+    section
+    |> to_string()
+    |> String.replace("_", " ")
+    |> String.downcase()
   end
 
   defp append_section_message(notes, section_key, sender, message_text) do

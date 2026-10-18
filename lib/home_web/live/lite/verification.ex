@@ -3,6 +3,13 @@ defmodule HomeWeb.Verify.Text do
 
   alias Home.Accounts
 
+  @verification_chat_sections [
+    "Personal Details",
+    "Identity Verification",
+    "Property Details",
+    "Billing & Payment"
+  ]
+
   @impl true
   def mount(_params, _session, socket) do
     # Fetch landlords pending verification with preloaded documents
@@ -23,8 +30,9 @@ defmodule HomeWeb.Verify.Text do
      |> assign(:sidebar_open, false)
      |> assign(:active_tab, "1")
      |> assign(:show_chat, false)
-     |> assign(:chat_messages, admin_chat_messages(selected_landlord))
+     |> assign_chat_messages(admin_chat_messages(selected_landlord))
      |> assign(:message_text, "")
+     |> assign(:unread_messages, %{})
      |> assign(:approved_sections, %{})
      |> assign(:theme, "light")}
   end
@@ -46,7 +54,7 @@ defmodule HomeWeb.Verify.Text do
      |> put_flash(:info, "New landlord registration completed: #{landlord.names}")
      |> assign(:landlords, updated_landlords)
      |> assign(:selected_landlord, selected_landlord)
-     |> assign(:chat_messages, admin_chat_messages(selected_landlord))}
+     |> assign_chat_messages(admin_chat_messages(selected_landlord))}
   end
 
   @impl true
@@ -63,6 +71,7 @@ defmodule HomeWeb.Verify.Text do
   @impl true
   def handle_info({:landlord_message_updated, landlord}, socket) do
     landlord_with_docs = Accounts.get_landlord_with_documents(landlord.id) || landlord
+    chat_messages = admin_chat_messages(landlord_with_docs)
 
     updated_landlords =
       Enum.map(socket.assigns.landlords, fn current ->
@@ -78,7 +87,7 @@ defmodule HomeWeb.Verify.Text do
         %{id: id} when id == landlord_with_docs.id ->
           socket
           |> assign(:selected_landlord, landlord_with_docs)
-          |> assign(:chat_messages, admin_chat_messages(landlord_with_docs))
+          |> assign_chat_messages(chat_messages)
 
         _ ->
           socket
@@ -107,7 +116,9 @@ defmodule HomeWeb.Verify.Text do
      socket
      |> assign(:search_query, query)
      |> assign(:selected_landlord, selected)
-     |> assign(:chat_messages, admin_chat_messages(selected))}
+     |> assign(:active_chat_section, nil)
+     |> assign(:unread_messages, %{})
+     |> assign_chat_messages(admin_chat_messages(selected))}
   end
 
   def handle_event("select_landlord", %{"id" => landlord_id}, socket) do
@@ -116,7 +127,9 @@ defmodule HomeWeb.Verify.Text do
     {:noreply,
      socket
      |> assign(:selected_landlord, landlord)
-     |> assign(:chat_messages, admin_chat_messages(landlord))
+     |> assign(:active_chat_section, nil)
+     |> assign(:unread_messages, %{})
+     |> assign_chat_messages(admin_chat_messages(landlord))
      |> assign(:sidebar_open, false)}
   end
 
@@ -126,6 +139,14 @@ defmodule HomeWeb.Verify.Text do
 
   def handle_event("select_tab", %{"tab" => tab}, socket) do
     {:noreply, assign(socket, :active_tab, tab)}
+  end
+
+  def handle_event("select_chat_section", %{"section" => section}, socket) do
+    if section in socket.assigns.chat_sections do
+      {:noreply, mark_chat_section_read(socket, section)}
+    else
+      {:noreply, socket}
+    end
   end
 
   def handle_event("toggle_theme", _, socket) do
@@ -177,16 +198,29 @@ defmodule HomeWeb.Verify.Text do
   @impl true
   def handle_event("open_inquire_modal", %{"section" => section}, socket) do
     default_msg = "Hello, we have a question regarding your #{section}. Please clarify."
+    section_title = human_section(section)
 
     {:noreply,
      socket
      |> assign(:active_inquire_section, section)
+     |> mark_chat_section_read(section_title)
      |> assign(:message_text, default_msg)
      |> assign(:show_chat, true)}
   end
 
   def handle_event("toggle_chat", _params, socket) do
-    {:noreply, update(socket, :show_chat, &(!&1))}
+    if socket.assigns.show_chat do
+      {:noreply, assign(socket, :show_chat, false)}
+    else
+      section =
+        latest_unread_section(socket.assigns.unread_messages, socket.assigns.chat_sections) ||
+          socket.assigns.active_chat_section || List.first(socket.assigns.chat_sections)
+
+      {:noreply,
+       socket
+       |> assign(:show_chat, true)
+       |> mark_chat_section_read(section)}
+    end
   end
 
   def handle_event("update_message", %{"message" => msg}, socket) do
@@ -203,6 +237,7 @@ defmodule HomeWeb.Verify.Text do
         {:noreply,
          socket
          |> update_landlord_in_assigns(updated_landlord)
+         |> assign(:active_chat_section, human_section(section))
          |> assign(:message_text, "")
          |> put_flash(:info, "Inquiry sent for #{section}")}
 
@@ -224,7 +259,8 @@ defmodule HomeWeb.Verify.Text do
          socket
          |> assign(:landlords, remaining_landlords)
          |> assign(:selected_landlord, next_selected)
-         |> assign(:chat_messages, admin_chat_messages(next_selected))
+         |> assign(:active_chat_section, nil)
+         |> assign_chat_messages(admin_chat_messages(next_selected))
          |> put_flash(
            :info,
            "#{landlord.names || "Landlord"} has been approved and granted access."
@@ -248,7 +284,8 @@ defmodule HomeWeb.Verify.Text do
          socket
          |> assign(:landlords, remaining_landlords)
          |> assign(:selected_landlord, next_selected)
-         |> assign(:chat_messages, admin_chat_messages(next_selected))
+         |> assign(:active_chat_section, nil)
+         |> assign_chat_messages(admin_chat_messages(next_selected))
          |> put_flash(:error, "#{landlord.names || "Landlord"} application rejected.")}
 
       {:error, _changeset} ->
@@ -268,7 +305,7 @@ defmodule HomeWeb.Verify.Text do
     socket
     |> assign(:landlords, updated_landlords)
     |> assign(:selected_landlord, updated_landlord)
-    |> assign(:chat_messages, admin_chat_messages(updated_landlord))
+    |> assign_chat_messages(admin_chat_messages(updated_landlord))
   end
 
   defp admin_chat_messages(nil), do: []
@@ -296,10 +333,64 @@ defmodule HomeWeb.Verify.Text do
           author: if(sender == "landlord", do: "Landlord", else: "Admin Verification Team"),
           section: human_section(section),
           time: Map.get(message, "time", "Earlier"),
-          text: Map.get(message, "text", "")
+          text: Map.get(message, "text", ""),
+          read_by_admin:
+            Map.get(message, "read_by_admin", Map.get(message, :read_by_admin, false))
         }
       end)
     end)
+  end
+
+  defp chat_sections(messages) do
+    (@verification_chat_sections ++ Enum.map(messages, & &1.section))
+    |> Enum.uniq()
+  end
+
+  defp assign_chat_messages(socket, messages) do
+    sections = chat_sections(messages)
+
+    socket
+    |> assign(:chat_messages, messages)
+    |> assign(:chat_sections, sections)
+    |> assign(:unread_messages, unread_message_counts(messages))
+    |> assign(:active_chat_section, socket.assigns[:active_chat_section] || List.first(sections))
+  end
+
+  defp unread_message_counts(messages) do
+    messages
+    |> Enum.filter(&(&1.sender == "landlord" and not &1.read_by_admin))
+    |> Enum.frequencies_by(& &1.section)
+  end
+
+  defp mark_chat_section_read(socket, section) do
+    socket = assign(socket, :active_chat_section, section)
+
+    case socket.assigns.selected_landlord do
+      nil ->
+        socket
+
+      landlord ->
+        case Accounts.mark_section_messages_read(landlord, section, "admin") do
+          {:ok, updated_landlord} -> update_landlord_in_assigns(socket, updated_landlord)
+          {:error, _changeset} -> socket
+        end
+    end
+  end
+
+  defp section_message_count(messages, section) do
+    Enum.count(messages, &(&1.section == section))
+  end
+
+  defp sent_message_count(messages) do
+    Enum.count(messages, &(&1.sender == "admin"))
+  end
+
+  defp unread_message_count(unread_messages), do: Enum.sum(Map.values(unread_messages))
+
+  defp latest_unread_section(unread_messages, sections) do
+    sections
+    |> Enum.reverse()
+    |> Enum.find(&(Map.get(unread_messages, &1, 0) > 0))
   end
 
   defp human_section(section) do
@@ -1246,7 +1337,12 @@ defmodule HomeWeb.Verify.Text do
               >
                 <.icon name="hero-chat-bubble-left-right" class="size-5 sm:size-6" />
                 <span>Message Landlord</span>
-                <span :if={length(@chat_messages) > 0} class="flex size-2 rounded-full bg-emerald-400">
+                <span
+                  :if={unread_message_count(@unread_messages) > 0}
+                  class="flex min-w-5 items-center justify-center rounded-full bg-emerald-400 px-1.5 py-0.5 text-[10px] font-extrabold leading-none text-emerald-950"
+                  aria-label={"#{unread_message_count(@unread_messages)} unread messages"}
+                >
+                  {unread_message_count(@unread_messages)}
                 </span>
               </button>
             </div>
@@ -1288,6 +1384,13 @@ defmodule HomeWeb.Verify.Text do
                       <p class="text-[10px] font-medium text-emerald-500">
                         Messaging: {(@selected_landlord && @selected_landlord.names) || "Landlord"}
                       </p>
+                      <p class={[
+                        "text-[10px]",
+                        @theme == "dark" && "text-slate-400",
+                        @theme == "light" && "text-slate-500"
+                      ]}>
+                        {sent_message_count(@chat_messages)} messages sent
+                      </p>
                     </div>
                   </div>
                   <button
@@ -1303,10 +1406,44 @@ defmodule HomeWeb.Verify.Text do
                   </button>
                 </div>
 
+                <%!-- Contextual message tabs --%>
+                <div
+                  class={[
+                    "flex shrink-0 gap-2 overflow-x-auto border-b px-3 py-2.5",
+                    @theme == "dark" && "border-slate-800 bg-[#0e1626]",
+                    @theme == "light" && "border-slate-200 bg-white"
+                  ]}
+                  role="tablist"
+                  aria-label="Message sections"
+                >
+                  <button
+                    :for={section <- @chat_sections}
+                    type="button"
+                    role="tab"
+                    aria-selected={@active_chat_section == section}
+                    phx-click="select_chat_section"
+                    phx-value-section={section}
+                    class={[
+                      "inline-flex shrink-0 items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition",
+                      @active_chat_section == section &&
+                        "border-emerald-500 bg-emerald-500/10 text-emerald-600",
+                      @active_chat_section != section && @theme == "dark" &&
+                        "border-slate-700 text-slate-300 hover:border-slate-500",
+                      @active_chat_section != section && @theme == "light" &&
+                        "border-slate-200 text-slate-600 hover:border-slate-400"
+                    ]}
+                  >
+                    {section}
+                    <span class="flex size-4 items-center justify-center rounded-full bg-slate-200 text-[9px] font-bold text-slate-700">
+                      {section_message_count(@chat_messages, section)}
+                    </span>
+                  </button>
+                </div>
+
                 <%!-- Messages List --%>
                 <div class="flex-1 space-y-3 overflow-y-auto p-4">
                   <div
-                    :for={msg <- @chat_messages}
+                    :for={msg <- Enum.filter(@chat_messages, &(&1.section == @active_chat_section))}
                     class={[
                       "flex flex-col max-w-[88%]",
                       msg.sender == "admin" && "ml-auto items-end",
@@ -1341,6 +1478,16 @@ defmodule HomeWeb.Verify.Text do
                       <p>{msg.text}</p>
                     </div>
                   </div>
+                  <p
+                    :if={section_message_count(@chat_messages, @active_chat_section) == 0}
+                    class={[
+                      "py-8 text-center text-xs",
+                      @theme == "dark" && "text-slate-400",
+                      @theme == "light" && "text-slate-500"
+                    ]}
+                  >
+                    No messages in this section yet.
+                  </p>
                 </div>
 
                 <%!-- Input Form --%>

@@ -35,6 +35,27 @@ defmodule Home.AccountsTest do
     end
   end
 
+  describe "count_verified_landlords/0" do
+    test "counts only approved landlord accounts" do
+      for {email, status} <- [
+            {unique_user_email(), "approved"},
+            {unique_user_email(), "pending"}
+          ] do
+        %Landlord{}
+        |> Landlord.personal_details_changeset(%{
+          entity_type: "individual",
+          names: "Jane Landlord",
+          email: email,
+          phone: "0712345678"
+        })
+        |> Landlord.verification_changeset(%{verification_status: status})
+        |> Repo.insert!()
+      end
+
+      assert Accounts.count_verified_landlords() == 1
+    end
+  end
+
   describe "get_user!/1" do
     test "raises if id is invalid" do
       assert_raise Ecto.NoResultsError, fn ->

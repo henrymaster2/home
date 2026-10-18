@@ -10,6 +10,13 @@ defmodule Home.Accounts.Landlord do
     field :phone, :string
     field :whatsapp_phone, :string
     field :residence_location, :string
+    field :subscription_plan, :string, default: "pay_per_listing"
+    field :billing_method, :string, default: "M-Pesa"
+    field :billing_phone, :string
+    field :enable_direct_payouts, :boolean, default: false
+    field :payout_method, :string
+    field :payout_number, :string
+    field :payout_name, :string
 
     # step 2
     field :id_type, :string, default: "National ID"
@@ -36,6 +43,7 @@ defmodule Home.Accounts.Landlord do
     field :billing_status, :string, default: "pending"
     field :verification_status, :string, default: "pending"
     field :admin_notes, :map, default: %{}
+    field :registration_data, :map, default: %{}
 
     belongs_to :user, Home.Accounts.User
     belongs_to :verification_request, Home.Accounts.VerificationRequest
@@ -56,6 +64,14 @@ defmodule Home.Accounts.Landlord do
       :phone,
       :whatsapp_phone,
       :residence_location,
+      :subscription_plan,
+      :billing_method,
+      :billing_phone,
+      :enable_direct_payouts,
+      :payout_method,
+      :payout_number,
+      :payout_name,
+      :registration_data,
       :user_id,
       :verification_request_id
     ])

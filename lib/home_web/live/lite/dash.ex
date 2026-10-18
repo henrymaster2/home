@@ -5,48 +5,50 @@ defmodule HomeWeb.Lite.DashboardLive do
   @impl true
   def mount(_params, _session, socket) do
     current_user = socket.assigns.current_scope.user
+
     if current_user.role == "admin_lite" do
-    # Subscribe to verification requests for realtime updates
-    if connected?(socket) do
-      Accounts.subscribe_verification_requests()
-    end
+      # Subscribe to verification requests for realtime updates
+      if connected?(socket) do
+        Accounts.subscribe_verification_requests()
+        Accounts.subscribe_admin_verifications()
+      end
 
-    # Fetch initial requests from DB
-    verification_requests = Accounts.list_verification_requests()
+      # Fetch initial requests from DB
+      verification_requests = Accounts.list_verification_requests()
+      verified_landlord_count = Accounts.count_verified_landlords()
 
-    socket =
-      socket
-      |> assign(:theme, "dark")
-      |> assign(:page_title, "Dashboard")
-      |> assign(:active_tab, "overview")
-      |> assign(:landlords, verification_requests)
-      |> assign(:show_add_modal, false)
-      |> assign(:mobile_menu_open, false)
-      |> assign(:generated_link, nil)
-      |> assign(:selected_landlord_request, nil)
-      |> assign(:user_name, current_user.names)
-      |> assign(
-        :form,
-        to_form(
-          %{
-            "name" => "",
-            "email" => "",
-            "phone" => ""
-          },
-          as: :landlord
+      socket =
+        socket
+        |> assign(:theme, "dark")
+        |> assign(:page_title, "Dashboard")
+        |> assign(:active_tab, "overview")
+        |> assign(:landlords, verification_requests)
+        |> assign(:verified_landlord_count, verified_landlord_count)
+        |> assign(:show_add_modal, false)
+        |> assign(:mobile_menu_open, false)
+        |> assign(:generated_link, nil)
+        |> assign(:selected_landlord_request, nil)
+        |> assign(:user_name, current_user.names)
+        |> assign(
+          :form,
+          to_form(
+            %{
+              "name" => "",
+              "email" => "",
+              "phone" => ""
+            },
+            as: :landlord
+          )
         )
-      )
 
-    {:ok, socket}
+      {:ok, socket}
     else
-  {:ok,
-  socket
-  |> put_flash(:error, "unauthorized access. You do not have permission to view this page.")
-  |> redirect(to: ~p"/users/log-in")
-
-  }
+      {:ok,
+       socket
+       |> put_flash(:error, "unauthorized access. You do not have permission to view this page.")
+       |> redirect(to: ~p"/users/log-in")}
+    end
   end
-end
 
   @impl true
   def handle_event("toggle_theme", _, socket) do
@@ -195,6 +197,10 @@ end
      )}
   end
 
+  def handle_info({:admin_verification_updated, _landlord}, socket) do
+    {:noreply, assign(socket, :verified_landlord_count, Accounts.count_verified_landlords())}
+  end
+
   defp initials(nil), do: "??"
 
   defp initials(name) do
@@ -321,8 +327,9 @@ end
               >
                 Overview
               </button>
-              <button
+              <.link
                 phx-click="set_tab"
+                navigate={~p"/landlords"}
                 phx-value-tab="landlords"
                 class="w-full flex items-center gap-3 px-3.5 py-2.5 text-xs font-medium hover:text-[var(--text-main)] hover:bg-white/5"
                 style={
@@ -334,7 +341,7 @@ end
                 }
               >
                 Landlords
-              </button>
+              </.link>
               <.link
                 navigate={~p"/verify"}
                 phx-no-format
@@ -416,7 +423,7 @@ end
               <span>Add Landlord</span>
             </button>
           </div>
-
+          
     <!--first card balance card-->
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
             <div
@@ -643,7 +650,7 @@ end
                 <span class="text-violet-400 font-semibold">Fully Verified</span>
               </div>
             </div>
-
+            
     <!--second card-->
             <% total_count = length(@landlords)
             pending_count = Enum.count(@landlords, &(Map.get(&1, :status) == "pending"))
@@ -690,7 +697,7 @@ end
                   Verified
                 </button>
               </div>
-
+              
     <!-- Header -->
               <div class="mb-5 flex items-start justify-between">
                 <div>
@@ -720,7 +727,7 @@ end
                   <i class="h-1.5 w-1.5 rounded-full bg-emerald-500"></i> Active
                 </span>
               </div>
-
+              
     <!-- Metrics -->
               <div class="grid grid-cols-2 gap-3">
                 <div
@@ -772,28 +779,25 @@ end
                       class="flex items-center gap-2 text-xs font-semibold"
                       style={if @theme == "light", do: "color: #4c1d95;", else: "color: #c4b5fd;"}
                     >
-                      <i class="h-2 w-2 rounded-full bg-violet-500"></i> Verified
+                      <i class="h-2 w-2 rounded-full bg-violet-500"></i> Fully Verified Accounts
                     </span>
                     <b
                       class="text-lg"
                       style={if @theme == "light", do: "color: #5b21b6;", else: "color: #c4b5fd;"}
                     >
-                      {verified_count}
+                      {@verified_landlord_count}
                     </b>
                   </div>
-                  <p
-                    class="mt-1 text-[10px]"
-                    style={
-                      if @theme == "light",
-                        do: "color: rgba(91, 33, 182, 0.7);",
-                        else: "color: rgba(196, 181, 253, 0.7);"
-                    }
+                  <.link
+                    navigate={~p"/landlords"}
+                    class="mt-1 inline-block text-[10px] font-medium hover:underline"
+                    style="color: var(--accent-purple-light);"
                   >
-                    {verified_pct}% of requests
-                  </p>
+                    View landlords &rarr;
+                  </.link>
                 </div>
               </div>
-
+              
     <!-- Progress -->
               <div class="mt-4">
                 <div class="mb-1.5 flex justify-between text-[10px]" style="color: var(--text-muted);">
@@ -900,7 +904,7 @@ end
               </div>
             </div>
           </div>
-
+          
     <!-- LANDLORD REQUESTS TABLE -->
           <div
             class="rounded-xl overflow-hidden border border-[var(--border)]"

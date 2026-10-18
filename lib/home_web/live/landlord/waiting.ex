@@ -46,8 +46,11 @@ defmodule HomeWeb.Process.Text do
      |> assign(:chat_messages, chat_messages)
      |> assign(:chat_sections, chat_sections)
      |> assign(:active_chat_section, List.last(chat_sections))
-     |> assign(:unread_messages, %{})
-     |> assign(:latest_unread_section, nil)
+     |> assign(:unread_messages, unread_message_counts(chat_messages))
+     |> assign(
+       :latest_unread_section,
+       latest_unread_section(unread_message_counts(chat_messages), chat_sections)
+     )
      |> assign(:message_text, "")
      |> assign(:theme, "light")}
   end
@@ -61,7 +64,12 @@ defmodule HomeWeb.Process.Text do
      socket
      |> assign(:landlord, updated_landlord)
      |> assign(:chat_messages, chat_messages)
-     |> assign(:chat_sections, chat_sections(chat_messages))}
+     |> assign(:chat_sections, chat_sections(chat_messages))
+     |> assign(:unread_messages, unread_message_counts(chat_messages))
+     |> assign(
+       :latest_unread_section,
+       latest_unread_section(unread_message_counts(chat_messages), chat_sections(chat_messages))
+     )}
   end
 
   @impl true
@@ -70,32 +78,22 @@ defmodule HomeWeb.Process.Text do
          %{landlord: updated_landlord, section: section, status: status}},
         socket
       ) do
-    chat_messages = chat_messages_for_landlord(updated_landlord)
-    chat_sections = chat_sections(chat_messages)
     section_title = human_section(section)
 
-    new_admin_messages =
-      new_admin_message_count(socket.assigns.chat_messages, chat_messages, section_title)
-
-    unread_messages =
-      if new_admin_messages > 0 and
-           (not socket.assigns.show_chat or socket.assigns.active_chat_section != section_title) do
-        Map.update(
-          socket.assigns.unread_messages,
-          section_title,
-          new_admin_messages,
-          &(&1 + new_admin_messages)
-        )
+    updated_landlord =
+      if socket.assigns.show_chat and socket.assigns.active_chat_section == section_title do
+        case Accounts.mark_section_messages_read(updated_landlord, section_title, "landlord") do
+          {:ok, landlord} -> landlord
+          {:error, _changeset} -> updated_landlord
+        end
       else
-        socket.assigns.unread_messages
+        updated_landlord
       end
 
-    latest_unread_section =
-      if new_admin_messages > 0 and Map.get(unread_messages, section_title, 0) > 0 do
-        section_title
-      else
-        socket.assigns.latest_unread_section
-      end
+    chat_messages = chat_messages_for_landlord(updated_landlord)
+    chat_sections = chat_sections(chat_messages)
+    unread_messages = unread_message_counts(chat_messages)
+    latest_unread_section = latest_unread_section(unread_messages, chat_sections)
 
     steps = build_verification_steps(updated_landlord)
     completed_steps_count = Enum.count(steps, & &1.completed?)
@@ -150,20 +148,7 @@ defmodule HomeWeb.Process.Text do
 
   def handle_event("select_chat_section", %{"section" => section}, socket) do
     if section in socket.assigns.chat_sections do
-      unread_messages = Map.delete(socket.assigns.unread_messages, section)
-
-      latest_unread_section =
-        if socket.assigns.latest_unread_section == section do
-          latest_unread_section(unread_messages, socket.assigns.chat_sections)
-        else
-          socket.assigns.latest_unread_section
-        end
-
-      {:noreply,
-       socket
-       |> assign(:active_chat_section, section)
-       |> assign(:unread_messages, unread_messages)
-       |> assign(:latest_unread_section, latest_unread_section)}
+      {:noreply, mark_chat_section_read(socket, section)}
     else
       {:noreply, socket}
     end
@@ -199,17 +184,10 @@ defmodule HomeWeb.Process.Text do
           socket.assigns.active_chat_section ||
           List.last(socket.assigns.chat_sections)
 
-      unread_messages = Map.delete(socket.assigns.unread_messages, section)
-
       {:noreply,
        socket
        |> assign(:show_chat, true)
-       |> assign(:active_chat_section, section)
-       |> assign(:unread_messages, unread_messages)
-       |> assign(
-         :latest_unread_section,
-         latest_unread_section(unread_messages, socket.assigns.chat_sections)
-       )}
+       |> mark_chat_section_read(section)}
     end
   end
 
@@ -1370,12 +1348,10 @@ defmodule HomeWeb.Process.Text do
     |> Enum.uniq()
   end
 
-  defp new_admin_message_count(previous_messages, messages, section) do
-    previous_count =
-      Enum.count(previous_messages, &(&1.sender == "admin" and &1.section == section))
-
-    current_count = Enum.count(messages, &(&1.sender == "admin" and &1.section == section))
-    max(current_count - previous_count, 0)
+  defp unread_message_counts(messages) do
+    messages
+    |> Enum.filter(&(&1.sender == "admin" and not &1.read_by_landlord))
+    |> Enum.frequencies_by(& &1.section)
   end
 
   defp unread_message_count(unread_messages) do
@@ -1386,6 +1362,36 @@ defmodule HomeWeb.Process.Text do
     sections
     |> Enum.reverse()
     |> Enum.find(&(Map.get(unread_messages, &1, 0) > 0))
+  end
+
+  defp mark_chat_section_read(socket, section) do
+    socket = assign(socket, :active_chat_section, section)
+
+    case socket.assigns.landlord do
+      nil ->
+        socket
+
+      landlord ->
+        case Accounts.mark_section_messages_read(landlord, section, "landlord") do
+          {:ok, updated_landlord} ->
+            chat_messages = chat_messages_for_landlord(updated_landlord)
+            chat_sections = chat_sections(chat_messages)
+            unread_messages = unread_message_counts(chat_messages)
+
+            socket
+            |> assign(:landlord, updated_landlord)
+            |> assign(:chat_messages, chat_messages)
+            |> assign(:chat_sections, chat_sections)
+            |> assign(:unread_messages, unread_messages)
+            |> assign(
+              :latest_unread_section,
+              latest_unread_section(unread_messages, chat_sections)
+            )
+
+          {:error, _changeset} ->
+            socket
+        end
+    end
   end
 
   defp notes_to_chat_messages(notes) when is_map(notes) do
@@ -1422,7 +1428,9 @@ defmodule HomeWeb.Process.Text do
       author: if(sender == "landlord", do: "You", else: "Admin Verification Team"),
       section: section,
       time: Map.get(message, "time", "Earlier"),
-      text: text
+      text: text,
+      read_by_landlord:
+        Map.get(message, "read_by_landlord", Map.get(message, :read_by_landlord, false))
     }
   end
 
