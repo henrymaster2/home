@@ -1,6 +1,14 @@
 defmodule HomeWeb.Process.Text do
   use HomeWeb, :live_view
   alias Home.Accounts
+
+  @verification_chat_sections [
+    "Personal Details",
+    "Identity Verification",
+    "Property Details",
+    "Billing & Payment"
+  ]
+
   @process_token_salt "landlord-process"
   @impl true
   def mount(params, _session, socket) do
@@ -20,6 +28,7 @@ defmodule HomeWeb.Process.Text do
         else: 0
 
     chat_messages = chat_messages_for_landlord(landlord)
+    chat_sections = chat_sections(chat_messages)
 
     {:ok,
      socket
@@ -35,8 +44,24 @@ defmodule HomeWeb.Process.Text do
      |> assign(:show_chat, false)
      |> assign(:show_verified_modal, landlord && landlord.verification_status == "approved")
      |> assign(:chat_messages, chat_messages)
+     |> assign(:chat_sections, chat_sections)
+     |> assign(:active_chat_section, List.last(chat_sections))
+     |> assign(:unread_messages, %{})
+     |> assign(:latest_unread_section, nil)
      |> assign(:message_text, "")
      |> assign(:theme, "light")}
+  end
+
+  @impl true
+  def handle_info({:landlord_message_updated, landlord}, socket) do
+    updated_landlord = Accounts.get_landlord_with_documents(landlord.id) || landlord
+    chat_messages = chat_messages_for_landlord(updated_landlord)
+
+    {:noreply,
+     socket
+     |> assign(:landlord, updated_landlord)
+     |> assign(:chat_messages, chat_messages)
+     |> assign(:chat_sections, chat_sections(chat_messages))}
   end
 
   @impl true
@@ -45,6 +70,33 @@ defmodule HomeWeb.Process.Text do
          %{landlord: updated_landlord, section: section, status: status}},
         socket
       ) do
+    chat_messages = chat_messages_for_landlord(updated_landlord)
+    chat_sections = chat_sections(chat_messages)
+    section_title = human_section(section)
+
+    new_admin_messages =
+      new_admin_message_count(socket.assigns.chat_messages, chat_messages, section_title)
+
+    unread_messages =
+      if new_admin_messages > 0 and
+           (not socket.assigns.show_chat or socket.assigns.active_chat_section != section_title) do
+        Map.update(
+          socket.assigns.unread_messages,
+          section_title,
+          new_admin_messages,
+          &(&1 + new_admin_messages)
+        )
+      else
+        socket.assigns.unread_messages
+      end
+
+    latest_unread_section =
+      if new_admin_messages > 0 and Map.get(unread_messages, section_title, 0) > 0 do
+        section_title
+      else
+        socket.assigns.latest_unread_section
+      end
+
     steps = build_verification_steps(updated_landlord)
     completed_steps_count = Enum.count(steps, & &1.completed?)
     total_steps_count = length(steps)
@@ -77,16 +129,44 @@ defmodule HomeWeb.Process.Text do
      socket
      |> assign(:landlord, updated_landlord)
      |> assign(:steps, steps)
+     |> assign(:chat_messages, chat_messages)
+     |> assign(:chat_sections, chat_sections)
+     |> assign(
+       :active_chat_section,
+       socket.assigns.active_chat_section || List.last(chat_sections)
+     )
+     |> assign(:unread_messages, unread_messages)
+     |> assign(:latest_unread_section, latest_unread_section)
      |> assign(:completed_steps_count, completed_steps_count)
      |> assign(:progress_percentage, progress_percentage)
      |> assign(:show_verified_modal, updated_landlord.verification_status == "approved")
-     |> assign(:chat_messages, chat_messages_for_landlord(updated_landlord))
      |> put_flash(flash_type, flash_msg)}
   end
 
   @impl true
   def handle_event("select_tab", %{"tab" => tab}, socket) do
     {:noreply, assign(socket, :active_tab, tab)}
+  end
+
+  def handle_event("select_chat_section", %{"section" => section}, socket) do
+    if section in socket.assigns.chat_sections do
+      unread_messages = Map.delete(socket.assigns.unread_messages, section)
+
+      latest_unread_section =
+        if socket.assigns.latest_unread_section == section do
+          latest_unread_section(unread_messages, socket.assigns.chat_sections)
+        else
+          socket.assigns.latest_unread_section
+        end
+
+      {:noreply,
+       socket
+       |> assign(:active_chat_section, section)
+       |> assign(:unread_messages, unread_messages)
+       |> assign(:latest_unread_section, latest_unread_section)}
+    else
+      {:noreply, socket}
+    end
   end
 
   def handle_event("toggle_theme", _, socket) do
@@ -110,7 +190,27 @@ defmodule HomeWeb.Process.Text do
   end
 
   def handle_event("toggle_chat", _params, socket) do
-    {:noreply, update(socket, :show_chat, &(!&1))}
+    if socket.assigns.show_chat do
+      {:noreply, assign(socket, :show_chat, false)}
+    else
+      section =
+        socket.assigns.latest_unread_section ||
+          latest_unread_section(socket.assigns.unread_messages, socket.assigns.chat_sections) ||
+          socket.assigns.active_chat_section ||
+          List.last(socket.assigns.chat_sections)
+
+      unread_messages = Map.delete(socket.assigns.unread_messages, section)
+
+      {:noreply,
+       socket
+       |> assign(:show_chat, true)
+       |> assign(:active_chat_section, section)
+       |> assign(:unread_messages, unread_messages)
+       |> assign(
+         :latest_unread_section,
+         latest_unread_section(unread_messages, socket.assigns.chat_sections)
+       )}
+    end
   end
 
   def handle_event("continue_to_house", _params, socket) do
@@ -122,17 +222,31 @@ defmodule HomeWeb.Process.Text do
   end
 
   def handle_event("send_message", %{"message" => msg}, socket) when byte_size(msg) > 0 do
-    new_msg = %{
-      sender: "landlord",
-      author: socket.assigns.first_name || "Landlord",
-      time: Calendar.strftime(Time.utc_now(), "%I:%M %p"),
-      text: msg
-    }
+    case socket.assigns.landlord do
+      nil ->
+        {:noreply,
+         put_flash(socket, :error, "Could not send message: landlord profile not found.")}
 
-    {:noreply,
-     socket
-     |> update(:chat_messages, fn msgs -> msgs ++ [new_msg] end)
-     |> assign(:message_text, "")}
+      landlord ->
+        section =
+          socket.assigns.active_chat_section || latest_admin_section(socket.assigns.chat_messages)
+
+        case Accounts.add_section_inquiry_message(landlord, section, "landlord", msg) do
+          {:ok, updated_landlord} ->
+            chat_messages = chat_messages_for_landlord(updated_landlord)
+
+            {:noreply,
+             socket
+             |> assign(:landlord, updated_landlord)
+             |> assign(:chat_messages, chat_messages)
+             |> assign(:chat_sections, chat_sections(chat_messages))
+             |> assign(:active_chat_section, section)
+             |> assign(:message_text, "")}
+
+          {:error, _changeset} ->
+            {:noreply, put_flash(socket, :error, "Could not send message. Please try again.")}
+        end
+    end
   end
 
   def handle_event("send_message", _params, socket), do: {:noreply, socket}
@@ -931,7 +1045,12 @@ defmodule HomeWeb.Process.Text do
               >
                 <.icon name="hero-chat-bubble-left-right" class="size-5 sm:size-6" />
                 <span>Verification Support</span>
-                <span :if={length(@chat_messages) > 0} class="flex size-2 rounded-full bg-emerald-400">
+                <span
+                  :if={unread_message_count(@unread_messages) > 0}
+                  class="flex min-w-5 items-center justify-center rounded-full bg-rose-500 px-1.5 py-0.5 text-[10px] font-extrabold leading-none text-white"
+                  aria-label={"#{unread_message_count(@unread_messages)} unread messages"}
+                >
+                  {unread_message_count(@unread_messages)}
                 </span>
               </button>
             </div>
@@ -986,10 +1105,48 @@ defmodule HomeWeb.Process.Text do
                   </button>
                 </div>
 
+                <%!-- Contextual message tabs --%>
+                <div
+                  :if={@chat_sections != []}
+                  class={[
+                    "flex shrink-0 gap-2 overflow-x-auto border-b px-3 py-2.5",
+                    @theme == "dark" && "border-slate-800 bg-[#0e1626]",
+                    @theme == "light" && "border-slate-200 bg-white"
+                  ]}
+                  role="tablist"
+                  aria-label="Message sections"
+                >
+                  <button
+                    :for={section <- @chat_sections}
+                    type="button"
+                    role="tab"
+                    aria-selected={@active_chat_section == section}
+                    phx-click="select_chat_section"
+                    phx-value-section={section}
+                    class={[
+                      "inline-flex shrink-0 items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition",
+                      @active_chat_section == section &&
+                        "border-emerald-500 bg-emerald-500/10 text-emerald-600",
+                      @active_chat_section != section && @theme == "dark" &&
+                        "border-slate-700 text-slate-300 hover:border-slate-500",
+                      @active_chat_section != section && @theme == "light" &&
+                        "border-slate-200 text-slate-600 hover:border-slate-400"
+                    ]}
+                  >
+                    {section}
+                    <span
+                      :if={Map.get(@unread_messages, section, 0) > 0}
+                      class="flex size-4 items-center justify-center rounded-full bg-rose-500 text-[9px] font-bold text-white"
+                    >
+                      {Map.get(@unread_messages, section)}
+                    </span>
+                  </button>
+                </div>
+
                 <%!-- Messages List --%>
                 <div class="flex-1 space-y-3 overflow-y-auto p-4">
                   <div
-                    :for={msg <- @chat_messages}
+                    :for={msg <- Enum.filter(@chat_messages, &(&1.section == @active_chat_section))}
                     class={[
                       "flex flex-col max-w-[88%]",
                       msg.sender == "landlord" && "ml-auto items-end",
@@ -1011,9 +1168,21 @@ defmodule HomeWeb.Process.Text do
                       msg.sender != "landlord" && @theme == "light" &&
                         "bg-slate-100 text-slate-800 border border-slate-200 rounded-bl-none"
                     ]}>
-                      {msg.text}
+                      <p>{msg.text}</p>
                     </div>
                   </div>
+                  <p
+                    :if={
+                      Enum.empty?(Enum.filter(@chat_messages, &(&1.section == @active_chat_section)))
+                    }
+                    class={[
+                      "py-8 text-center text-xs",
+                      @theme == "dark" && "text-slate-400",
+                      @theme == "light" && "text-slate-500"
+                    ]}
+                  >
+                    No messages in this section yet.
+                  </p>
                 </div>
 
                 <%!-- Input Form --%>
@@ -1188,16 +1357,35 @@ defmodule HomeWeb.Process.Text do
     ]
   end
 
-  defp chat_messages_for_landlord(nil), do: default_chat_messages()
+  defp chat_messages_for_landlord(nil), do: []
 
   defp chat_messages_for_landlord(landlord) do
     landlord
     |> Map.get(:admin_notes, %{})
     |> notes_to_chat_messages()
-    |> case do
-      [] -> default_chat_messages()
-      messages -> default_chat_messages() ++ messages
-    end
+  end
+
+  defp chat_sections(messages) do
+    (@verification_chat_sections ++ Enum.map(messages, & &1.section))
+    |> Enum.uniq()
+  end
+
+  defp new_admin_message_count(previous_messages, messages, section) do
+    previous_count =
+      Enum.count(previous_messages, &(&1.sender == "admin" and &1.section == section))
+
+    current_count = Enum.count(messages, &(&1.sender == "admin" and &1.section == section))
+    max(current_count - previous_count, 0)
+  end
+
+  defp unread_message_count(unread_messages) do
+    Enum.sum(Map.values(unread_messages))
+  end
+
+  defp latest_unread_section(unread_messages, sections) do
+    sections
+    |> Enum.reverse()
+    |> Enum.find(&(Map.get(unread_messages, &1, 0) > 0))
   end
 
   defp notes_to_chat_messages(notes) when is_map(notes) do
@@ -1232,8 +1420,9 @@ defmodule HomeWeb.Process.Text do
     %{
       sender: sender,
       author: if(sender == "landlord", do: "You", else: "Admin Verification Team"),
+      section: section,
       time: Map.get(message, "time", "Earlier"),
-      text: "#{section}: #{text}"
+      text: text
     }
   end
 
@@ -1245,16 +1434,14 @@ defmodule HomeWeb.Process.Text do
     })
   end
 
-  defp default_chat_messages do
-    [
-      %{
-        sender: "admin",
-        author: "Admin Verification Team",
-        time: "10:15 AM",
-        text:
-          "Hello! We are reviewing your submitted documents. Please reach out here if you have any questions."
-      }
-    ]
+  defp latest_admin_section(messages) do
+    messages
+    |> Enum.reverse()
+    |> Enum.find(&(&1.sender == "admin"))
+    |> case do
+      %{section: section} when is_binary(section) and section != "" -> section
+      _ -> "General"
+    end
   end
 
   defp human_section(section) do

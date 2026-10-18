@@ -151,6 +151,63 @@ defmodule Home.AccountsTest do
     end
   end
 
+  describe "update_landlord_section_status/4" do
+    test "appends inquiry messages without replacing earlier messages or other sections" do
+      landlord =
+        %Landlord{}
+        |> Landlord.personal_details_changeset(%{
+          entity_type: "individual",
+          names: "Jane Landlord",
+          email: unique_user_email(),
+          phone: "0712345678"
+        })
+        |> Repo.insert!()
+
+      assert {:ok, landlord} =
+               Accounts.update_landlord_section_status(
+                 landlord,
+                 "Personal Details",
+                 "inquired",
+                 "Please clarify your name."
+               )
+
+      assert {:ok, landlord} =
+               Accounts.update_landlord_section_status(
+                 landlord,
+                 "Personal Details",
+                 "inquired",
+                 "Please confirm your phone number."
+               )
+
+      assert {:ok, landlord} =
+               Accounts.update_landlord_section_status(
+                 landlord,
+                 "Identity Verification",
+                 "inquired",
+                 "Please upload a clearer ID."
+               )
+
+      assert {:ok, landlord} =
+               Accounts.add_section_inquiry_message(
+                 landlord,
+                 "Personal Details",
+                 "landlord",
+                 "I have clarified my name."
+               )
+
+      persisted_landlord = Repo.get!(Landlord, landlord.id)
+
+      assert [
+               %{"text" => "Please clarify your name."},
+               %{"text" => "Please confirm your phone number."},
+               %{"sender" => "landlord", "text" => "I have clarified my name."}
+             ] = persisted_landlord.admin_notes["Personal Details"]
+
+      assert [%{"text" => "Please upload a clearer ID."}] =
+               persisted_landlord.admin_notes["Identity Verification"]
+    end
+  end
+
   describe "sudo_mode?/2" do
     test "validates the authenticated_at time" do
       now = DateTime.utc_now()

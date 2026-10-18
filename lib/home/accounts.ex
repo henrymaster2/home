@@ -539,6 +539,10 @@ defmodule Home.Accounts do
     Phoenix.PubSub.subscribe(@pubsub, @topic)
   end
 
+  def subscribe_admin_verifications do
+    Phoenix.PubSub.subscribe(@pubsub, "admin_verifications")
+  end
+
   @doc """
   Creates a verification request and broadcasts a PubSub message upon success.
   """
@@ -855,10 +859,15 @@ defmodule Home.Accounts do
     # Map section string/atom to status field
     status_field = section_to_field(section_key)
 
-    # Update admin notes map if a note/message is provided
+    # Keep inquiries as a per-section thread instead of replacing the last note.
     updated_notes =
       if note && note != "" do
-        Map.put(landlord.admin_notes || %{}, to_string(section_key), note)
+        append_section_message(
+          landlord.admin_notes || %{},
+          to_string(section_key),
+          "admin",
+          note
+        )
       else
         landlord.admin_notes || %{}
       end
@@ -973,17 +982,43 @@ defmodule Home.Accounts do
   # ============================================================================
   def add_section_inquiry_message(landlord, section_key, sender, message_text) do
     key = to_string(section_key)
-    notes = landlord.admin_notes || %{}
 
-    existing_entry = Map.get(notes, key, [])
+    updated_notes =
+      append_section_message(landlord.admin_notes || %{}, key, sender, message_text)
 
-    # Normalize previous string notes to list structure if present
+    landlord
+    |> Landlord.verification_changeset(%{admin_notes: updated_notes})
+    |> Repo.update()
+    |> case do
+      {:ok, updated_landlord} ->
+        Phoenix.PubSub.broadcast(
+          @pubsub,
+          "landlord_verification:#{updated_landlord.id}",
+          {:landlord_message_updated, updated_landlord}
+        )
+
+        Phoenix.PubSub.broadcast(
+          @pubsub,
+          "admin_verifications",
+          {:landlord_message_updated, updated_landlord}
+        )
+
+        {:ok, updated_landlord}
+
+      {:error, changeset} ->
+        {:error, changeset}
+    end
+  end
+
+  defp append_section_message(notes, section_key, sender, message_text) do
+    existing_entry = Map.get(notes, section_key, [])
+
     thread =
       cond do
         is_list(existing_entry) ->
           existing_entry
 
-        is_binary(existing_entry) ->
+        is_binary(existing_entry) and existing_entry != "" ->
           [%{"sender" => "admin", "text" => existing_entry, "time" => "Earlier"}]
 
         true ->
@@ -991,16 +1026,11 @@ defmodule Home.Accounts do
       end
 
     new_message = %{
-      # "admin" or "landlord"
       "sender" => sender,
       "text" => message_text,
       "time" => Calendar.strftime(Time.utc_now(), "%I:%M %p")
     }
 
-    updated_notes = Map.put(notes, key, thread ++ [new_message])
-
-    landlord
-    |> Landlord.verification_changeset(%{admin_notes: updated_notes})
-    |> Repo.update()
+    Map.put(notes, section_key, thread ++ [new_message])
   end
 end

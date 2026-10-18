@@ -11,17 +11,8 @@ defmodule HomeWeb.Verify.Text do
 
     if connected?(socket) do
       Accounts.subscribe_verification_requests()
+      Accounts.subscribe_admin_verifications()
     end
-
-    mock_chat_messages = [
-      %{
-        sender: "admin",
-        author: "Admin Verification Team",
-        time: "10:15 AM",
-        text:
-          "Hello! We are reviewing your submitted documents. Please reach out here if you have any questions."
-      }
-    ]
 
     {:ok,
      socket
@@ -32,7 +23,7 @@ defmodule HomeWeb.Verify.Text do
      |> assign(:sidebar_open, false)
      |> assign(:active_tab, "1")
      |> assign(:show_chat, false)
-     |> assign(:chat_messages, mock_chat_messages)
+     |> assign(:chat_messages, admin_chat_messages(selected_landlord))
      |> assign(:message_text, "")
      |> assign(:approved_sections, %{})
      |> assign(:theme, "light")}
@@ -54,7 +45,8 @@ defmodule HomeWeb.Verify.Text do
      socket
      |> put_flash(:info, "New landlord registration completed: #{landlord.names}")
      |> assign(:landlords, updated_landlords)
-     |> assign(:selected_landlord, selected_landlord)}
+     |> assign(:selected_landlord, selected_landlord)
+     |> assign(:chat_messages, admin_chat_messages(selected_landlord))}
   end
 
   @impl true
@@ -66,6 +58,33 @@ defmodule HomeWeb.Verify.Text do
      socket
      |> put_flash(:info, "New verification request received")
      |> assign(:landlords, landlords)}
+  end
+
+  @impl true
+  def handle_info({:landlord_message_updated, landlord}, socket) do
+    landlord_with_docs = Accounts.get_landlord_with_documents(landlord.id) || landlord
+
+    updated_landlords =
+      Enum.map(socket.assigns.landlords, fn current ->
+        if current.id == landlord_with_docs.id, do: landlord_with_docs, else: current
+      end)
+
+    socket =
+      socket
+      |> assign(:landlords, updated_landlords)
+
+    socket =
+      case socket.assigns.selected_landlord do
+        %{id: id} when id == landlord_with_docs.id ->
+          socket
+          |> assign(:selected_landlord, landlord_with_docs)
+          |> assign(:chat_messages, admin_chat_messages(landlord_with_docs))
+
+        _ ->
+          socket
+      end
+
+    {:noreply, socket}
   end
 
   @impl true
@@ -87,7 +106,8 @@ defmodule HomeWeb.Verify.Text do
     {:noreply,
      socket
      |> assign(:search_query, query)
-     |> assign(:selected_landlord, selected)}
+     |> assign(:selected_landlord, selected)
+     |> assign(:chat_messages, admin_chat_messages(selected))}
   end
 
   def handle_event("select_landlord", %{"id" => landlord_id}, socket) do
@@ -96,6 +116,7 @@ defmodule HomeWeb.Verify.Text do
     {:noreply,
      socket
      |> assign(:selected_landlord, landlord)
+     |> assign(:chat_messages, admin_chat_messages(landlord))
      |> assign(:sidebar_open, false)}
   end
 
@@ -179,17 +200,9 @@ defmodule HomeWeb.Verify.Text do
 
     case Accounts.update_landlord_section_status(landlord, section, "inquired", msg) do
       {:ok, updated_landlord} ->
-        new_msg = %{
-          sender: "admin",
-          author: "Admin Verification Team",
-          time: Calendar.strftime(Time.utc_now(), "%I:%M %p"),
-          text: msg
-        }
-
         {:noreply,
          socket
          |> update_landlord_in_assigns(updated_landlord)
-         |> update(:chat_messages, fn msgs -> msgs ++ [new_msg] end)
          |> assign(:message_text, "")
          |> put_flash(:info, "Inquiry sent for #{section}")}
 
@@ -211,6 +224,7 @@ defmodule HomeWeb.Verify.Text do
          socket
          |> assign(:landlords, remaining_landlords)
          |> assign(:selected_landlord, next_selected)
+         |> assign(:chat_messages, admin_chat_messages(next_selected))
          |> put_flash(
            :info,
            "#{landlord.names || "Landlord"} has been approved and granted access."
@@ -234,6 +248,7 @@ defmodule HomeWeb.Verify.Text do
          socket
          |> assign(:landlords, remaining_landlords)
          |> assign(:selected_landlord, next_selected)
+         |> assign(:chat_messages, admin_chat_messages(next_selected))
          |> put_flash(:error, "#{landlord.names || "Landlord"} application rejected.")}
 
       {:error, _changeset} ->
@@ -253,6 +268,46 @@ defmodule HomeWeb.Verify.Text do
     socket
     |> assign(:landlords, updated_landlords)
     |> assign(:selected_landlord, updated_landlord)
+    |> assign(:chat_messages, admin_chat_messages(updated_landlord))
+  end
+
+  defp admin_chat_messages(nil), do: []
+
+  defp admin_chat_messages(landlord) do
+    (landlord.admin_notes || %{})
+    |> Enum.flat_map(fn {section, entry} ->
+      messages =
+        case entry do
+          messages when is_list(messages) ->
+            messages
+
+          message when is_binary(message) and message != "" ->
+            [%{"sender" => "admin", "text" => message, "time" => "Earlier"}]
+
+          _ ->
+            []
+        end
+
+      Enum.map(messages, fn message ->
+        sender = Map.get(message, "sender", "admin")
+
+        %{
+          sender: sender,
+          author: if(sender == "landlord", do: "Landlord", else: "Admin Verification Team"),
+          section: human_section(section),
+          time: Map.get(message, "time", "Earlier"),
+          text: Map.get(message, "text", "")
+        }
+      end)
+    end)
+  end
+
+  defp human_section(section) do
+    section
+    |> to_string()
+    |> String.replace("_", " ")
+    |> String.split(" ", trim: true)
+    |> Enum.map_join(" ", &String.capitalize/1)
   end
 
   @impl true
@@ -1273,7 +1328,17 @@ defmodule HomeWeb.Verify.Text do
                       msg.sender != "admin" && @theme == "light" &&
                         "bg-slate-100 text-slate-800 border border-slate-200 rounded-bl-none"
                     ]}>
-                      {msg.text}
+                      <p
+                        :if={msg[:section]}
+                        class={[
+                          "mb-1 font-bold",
+                          @theme == "dark" && "text-emerald-300",
+                          @theme == "light" && "text-emerald-700"
+                        ]}
+                      >
+                        {msg.section}
+                      </p>
+                      <p>{msg.text}</p>
                     </div>
                   </div>
                 </div>
