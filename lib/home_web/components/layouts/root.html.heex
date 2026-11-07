@@ -6,18 +6,17 @@
     <meta name="csrf-token" content={get_csrf_token()} />
 
     <!-- WhatsApp & Open Graph Meta Tags -->
-    <meta property="og:type" content="website" />
-    <meta property="og:url" content={assigns[:og_url] || "https://yourdomain.com"} />
-    <meta property="og:title" content={assigns[:og_title] || "HOME — House Hunting Made Easy in Kenya"} />
-    <meta property="og:description" content={assigns[:og_description] || "Explore verified rentals, Airbnb listings, and investment properties across Nairobi. Unlock exact addresses after owner approval."} />
-    <meta property="og:image" content={assigns[:og_image] || "https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=1200&q=80"} />
+<meta property="og:type" content="website" />
+<meta property="og:url" content="https://yourdomain.com" />
+<meta property="og:title" content="HOME — House Hunting Made Easy in Nairobi" />
+<meta property="og:description" content="Explore verified rentals, Airbnb listings, and investment properties across Nairobi. Unlock exact addresses after owner approval." />
+<meta property="og:image" content="https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=1200&q=80" />
 
-    <!-- Twitter Card -->
-    <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content={assigns[:og_title] || "HOME — House Hunting in Nairobi"} />
-    <meta name="twitter:description" content={assigns[:og_description] || "Explore verified rentals and Airbnbs in Nairobi."} />
-    <meta name="twitter:image" content={assigns[:og_image] || "https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=1200&q=80"} />
-
+<!-- Twitter Card -->
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="HOME — House Hunting Made Easy in Nairobi" />
+<meta name="twitter:description" content="Explore verified rentals, Airbnb listings, and investment properties across Nairobi." />
+<meta name="twitter:image" content="https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=1200&q=80" />
     <script>
       (() => {
         const theme = localStorage.getItem("theme") || "dark"
