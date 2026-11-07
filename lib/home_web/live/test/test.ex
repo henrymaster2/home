@@ -15,6 +15,7 @@ defmodule HomeWeb.Text.Test do
 
     {:ok,
      assign(socket,
+       page_title: "HOME | Find your next home",
        all_houses: all,
        houses: filter(all, tab),
        tabs: @tabs,
@@ -348,6 +349,7 @@ defmodule HomeWeb.Text.Test do
               />
               <div class="absolute inset-0 bg-linear-to-t from-black/60 via-transparent to-transparent">
               </div>
+              
               <div
                 class="absolute top-2 left-2 px-2 py-0.5 rounded-full text-[9px] font-mono font-bold uppercase tracking-wider glass-panel border"
                 style="color: var(--accent-1); border-color: color-mix(in srgb, var(--accent-1) 30%, transparent);"
@@ -355,7 +357,7 @@ defmodule HomeWeb.Text.Test do
                 {house.type}
               </div>
             </div>
-
+            
             <div class="p-3 flex flex-col justify-between flex-1">
               <div>
                 <h3
@@ -364,6 +366,7 @@ defmodule HomeWeb.Text.Test do
                 >
                   {house.address}
                 </h3>
+                
                 <p
                   class="text-[10px] md:text-xs font-mono truncate"
                   style="color: var(--color-text-dim)"
@@ -371,7 +374,7 @@ defmodule HomeWeb.Text.Test do
                   {house.city}
                 </p>
               </div>
-
+              
               <div
                 class="flex items-center justify-between mt-3 pt-2 border-t text-[10px] font-mono"
                 style="border-color: color-mix(in srgb, var(--color-text-dim) 15%, transparent); color: var(--color-text-dim)"
@@ -424,6 +427,7 @@ defmodule HomeWeb.Text.Test do
           HOME
         </span>
       </div>
+      
       <div class="relative flex w-full items-center gap-2">
         <div
           class="flex flex-1 items-center justify-center gap-1 rounded-full p-1 bottom-nav-glass shadow-xl"
@@ -442,8 +446,7 @@ defmodule HomeWeb.Text.Test do
             </button>
           <% end %>
         </div>
-        
-    <!-- SEARCH BUTTON -->
+        <!-- SEARCH BUTTON -->
         <button
           phx-click="toggle_search"
           class="shrink-0 w-10 h-10 rounded-full bottom-nav-glass flex items-center justify-center shadow-xl transition-all duration-200 active:scale-90"
@@ -459,8 +462,7 @@ defmodule HomeWeb.Text.Test do
             />
           </svg>
         </button>
-        
-    <!-- SEARCH OVERLAY -->
+        <!-- SEARCH OVERLAY -->
         <%= if @show_search do %>
           <div class="absolute right-0 top-12 z-[100] w-[min(80vw,20rem)] rounded-2xl p-2 bottom-nav-glass shadow-2xl">
             <div class="flex items-center gap-2">
@@ -478,7 +480,6 @@ defmodule HomeWeb.Text.Test do
                   d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
                 />
               </svg>
-
               <input
                 type="text"
                 placeholder="Search..."
@@ -486,7 +487,6 @@ defmodule HomeWeb.Text.Test do
                 class="w-full bg-transparent border-none outline-none text-sm"
                 style="color: var(--color-text)"
               />
-
               <button
                 phx-click="toggle_search"
                 class="shrink-0 text-xs"
@@ -499,7 +499,6 @@ defmodule HomeWeb.Text.Test do
         <% end %>
       </div>
     </div>
-
     <!-- Bottom Navigation -->
     <nav
       id="bottom-nav"
@@ -516,13 +515,8 @@ defmodule HomeWeb.Text.Test do
       >
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="size-5">
           <path d="M14.916 2.404a.75.75 0 0 1-.32 1.011l-.596.31V17a1 1 0 0 1-1 1h-2.26a.75.75 0 0 1-.75-.75v-3.5a.75.75 0 0 0-.75-.75H6.75a.75.75 0 0 0-.75.75v3.5a.75.75 0 0 1-.75.75h-3.5a.75.75 0 0 1 0-1.5H2V9.957a.75.75 0 0 1-.596-1.372L2 8.275V5.75a.75.75 0 0 1 1.5 0v1.745l10.404-5.41a.75.75 0 0 1 1.012.319ZM15.861 8.57a.75.75 0 0 1 .736-.025l1.999 1.04A.75.75 0 0 1 18 10.957V16.5h.25a.75.75 0 0 1 0 1.5h-2a.75.75 0 0 1-.75-.75V9.21a.75.75 0 0 1 .361-.64Z" />
-        </svg>
-
-        <span class="text-[8px] font-bold tracking-wider">
-          HOME
-        </span>
+        </svg> <span class="text-[8px] font-bold tracking-wider">HOME</span>
       </button>
-
       <button
         id="bottom-saved-button"
         type="button"
@@ -543,11 +537,8 @@ defmodule HomeWeb.Text.Test do
             stroke-linejoin="round"
             d="M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0 1 11.186 0Z"
           />
-        </svg>
-
-        <span class="text-[8px] font-bold tracking-wider">SAVED</span>
+        </svg> <span class="text-[8px] font-bold tracking-wider">SAVED</span>
       </button>
-
       <button
         id="bottom-profile-button"
         type="button"
@@ -569,11 +560,8 @@ defmodule HomeWeb.Text.Test do
             stroke-linejoin="round"
             d="M17.982 18.725A7.488 7.488 0 0 0 12 15.75a7.488 7.488 0 0 0-5.982 2.975m11.963 0a9 9 0 1 0-11.963 0m11.963 0A8.966 8.966 0 0 1 12 21a8.966 8.966 0 0 1-5.982-2.275M15 9.75a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"
           />
-        </svg>
-
-        <span class="text-[8px] font-bold tracking-wider">PROFILE</span>
+        </svg> <span class="text-[8px] font-bold tracking-wider">PROFILE</span>
       </button>
-
       <button
         id="bottom-help-button"
         type="button"
@@ -589,12 +577,9 @@ defmodule HomeWeb.Text.Test do
             d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12Zm8.706-1.442c1.146-.573 2.437.463 2.126 1.706l-.709 2.836.042-.02a.75.75 0 0 1 .67 1.34l-.04.022c-1.147.573-2.438-.463-2.127-1.706l.71-2.836-.042.02a.75.75 0 1 1-.671-1.34l.041-.022ZM12 9a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Z"
             clip-rule="evenodd"
           />
-        </svg>
-
-        <span class="text-[8px] font-bold tracking-wider">HELP</span>
+        </svg> <span class="text-[8px] font-bold tracking-wider">HELP</span>
       </button>
     </nav>
-
     <!-- Settings Sheet -->
     <%= if @show_settings do %>
       <div
@@ -612,9 +597,11 @@ defmodule HomeWeb.Text.Test do
             style="background: var(--color-text)"
           >
           </div>
+          
           <h3 class="text-lg font-bold font-mono mb-5 text-center" style="color: var(--color-text)">
             Settings
           </h3>
+          
           <div class="space-y-3">
             <div
               class="flex items-center justify-between p-4 rounded-2xl"
@@ -645,8 +632,9 @@ defmodule HomeWeb.Text.Test do
                     </svg>
                   <% end %>
                 </div>
-                <span class="text-sm font-semibold" style="color: var(--color-text)">Dark Mode</span>
+                 <span class="text-sm font-semibold" style="color: var(--color-text)">Dark Mode</span>
               </div>
+              
               <button
                 phx-click="toggle_theme"
                 class="relative w-12 h-7 rounded-full transition-colors duration-300"
@@ -656,6 +644,7 @@ defmodule HomeWeb.Text.Test do
                 </div>
               </button>
             </div>
+            
             <div
               class="flex items-center justify-between p-4 rounded-2xl"
               style="background: color-mix(in srgb, var(--color-bg) 80%, transparent);"
@@ -674,14 +663,17 @@ defmodule HomeWeb.Text.Test do
                     />
                   </svg>
                 </div>
+                
                 <span class="text-sm font-semibold" style="color: var(--color-text)">
                   Notifications
                 </span>
               </div>
+              
               <span class="text-xs font-mono opacity-40" style="color: var(--color-text-dim)">
                 Soon
               </span>
             </div>
+            
             <div
               class="flex items-center justify-between p-4 rounded-2xl"
               style="background: color-mix(in srgb, var(--color-bg) 80%, transparent);"
@@ -712,10 +704,10 @@ defmodule HomeWeb.Text.Test do
                 <h3 class="font-mono text-sm font-bold" style="color: var(--color-text)">
                   {gallery_house.address}
                 </h3>
-                <p class="text-xs" style="color: var(--color-text-dim)">
-                  {gallery_house.city}
-                </p>
+                
+                <p class="text-xs" style="color: var(--color-text-dim)">{gallery_house.city}</p>
               </div>
+              
               <button
                 id="close-gallery-button"
                 phx-click="close_gallery"
@@ -733,7 +725,7 @@ defmodule HomeWeb.Text.Test do
                 </svg>
               </button>
             </div>
-
+            
             <div
               id="gallery-images"
               class="h-full snap-y snap-mandatory overflow-y-auto scroll-smooth"
@@ -753,6 +745,7 @@ defmodule HomeWeb.Text.Test do
                     >
                       {room.name}
                     </p>
+                    
                     <p class="text-sm leading-relaxed" style="color: var(--color-text)">
                       {room.note}
                     </p>
@@ -764,7 +757,6 @@ defmodule HomeWeb.Text.Test do
         </div>
       <% end %>
     <% end %>
-
     <!-- Signup Modal -->
     <%= if @show_modal do %>
       <div
@@ -810,11 +802,14 @@ defmodule HomeWeb.Text.Test do
                 />
               </svg>
             </div>
+            
             <h2 class="text-2xl font-bold font-mono" style="color: var(--color-text)">Join HOME</h2>
+            
             <p class="text-sm mt-1" style="color: var(--color-text-dim)">
               Unlock prices & talk to owners.
             </p>
           </div>
+          
           <div class="space-y-3">
             <button
               class="w-full py-3 px-4 rounded-xl font-medium text-sm flex items-center justify-center gap-3 transition-all hover:scale-[1.02] active:scale-95 border"
@@ -847,13 +842,13 @@ defmodule HomeWeb.Text.Test do
               Continue with Apple
             </button>
           </div>
+          
           <p class="text-center text-xs mt-5 opacity-30" style="color: var(--color-text-dim)">
             Join 2,400 hunters. No email forms.
           </p>
         </div>
       </div>
     <% end %>
-
     <!-- Main Scroll for viewing house detals -->
     <div
       id="cinematic-scroll"
@@ -869,14 +864,19 @@ defmodule HomeWeb.Text.Test do
         data-index="0"
       >
         <div class="hero-grid-floor absolute bottom-0 left-0 right-0 h-1/2 pointer-events-none"></div>
+        
         <div class="absolute inset-0 pointer-events-none overflow-hidden">
           <div class="particle" style="left:10%;top:20%;animation-delay:0s"></div>
+          
           <div class="particle" style="left:30%;top:60%;animation-delay:1.2s"></div>
+          
           <div class="particle" style="left:70%;top:30%;animation-delay:2.5s"></div>
+          
           <div class="particle" style="left:85%;top:70%;animation-delay:0.8s"></div>
+          
           <div class="particle" style="left:50%;top:15%;animation-delay:3.1s"></div>
         </div>
-
+        
         <div class="relative z-10 w-full max-w-5xl mx-auto px-6 flex flex-col items-center">
           <div class="hologram-frame w-full max-w-3xl aspect-video relative mb-8" id="hero-hologram">
             <div class="hologram-screen absolute inset-0 overflow-hidden rounded-2xl">
@@ -902,9 +902,10 @@ defmodule HomeWeb.Text.Test do
               />
               <div class="absolute inset-0 bg-linear-to-t from-black/70 via-transparent to-black/30">
               </div>
+              
               <div class="hologram-scanline absolute inset-0 pointer-events-none"></div>
             </div>
-
+            
             <div class="absolute inset-0 flex flex-col items-center justify-center text-center p-6 z-10">
               <div
                 class="location-pill glass-panel px-3 py-1 rounded-full text-[10px] md:text-xs font-mono font-bold tracking-widest mb-4 flex items-center gap-2 border"
@@ -917,12 +918,14 @@ defmodule HomeWeb.Text.Test do
                 </span>
                 DETECTED: NAIROBI, KENYA
               </div>
+              
               <h1
                 class="text-3xl md:text-6xl font-bold font-mono mb-3 leading-tight"
                 style="color: var(--color-text); text-shadow: 0 0 40px color-mix(in srgb, var(--accent-1) 20%, transparent);"
               >
                 In Nairobi,<br />we got you covered.
               </h1>
+              
               <p
                 class="text-sm md:text-lg font-mono tracking-wide"
                 style="color: var(--color-text-dim)"
@@ -930,19 +933,20 @@ defmodule HomeWeb.Text.Test do
                 Rentals • Airbnb • Investment Properties
               </p>
             </div>
-
+            
             <div
               class="absolute -inset-1 rounded-2xl pointer-events-none"
               style="background: linear-gradient(45deg, var(--accent-1), transparent, var(--accent-2)); opacity: 0.3; filter: blur(12px);"
             >
             </div>
+            
             <div
               class="absolute inset-0 rounded-2xl border pointer-events-none"
               style="border-color: color-mix(in srgb, var(--accent-1) 20%, transparent);"
             >
             </div>
           </div>
-
+          
           <div class="grid grid-cols-1 md:grid-cols-3 gap-4 w-full max-w-3xl mb-8">
             <div class="glass-panel rounded-xl p-4 flex items-start gap-3 hover:scale-[1.02] transition-transform cursor-default">
               <div
@@ -963,15 +967,18 @@ defmodule HomeWeb.Text.Test do
                   />
                 </svg>
               </div>
+              
               <div>
                 <h3 class="text-sm font-bold font-mono mb-1" style="color: var(--color-text)">
                   Get easiy experience in house hunting
                 </h3>
+                
                 <p class="text-xs leading-relaxed" style="color: var(--color-text-dim)">
                   Exact address released only after both parties agree.
                 </p>
               </div>
             </div>
+            
             <div class="glass-panel rounded-xl p-4 flex items-start gap-3 hover:scale-[1.02] transition-transform cursor-default">
               <div
                 class="w-10 h-10 rounded-lg flex items-center justify-center shrink-0"
@@ -986,15 +993,18 @@ defmodule HomeWeb.Text.Test do
                   />
                 </svg>
               </div>
+              
               <div>
                 <h3 class="text-sm font-bold font-mono mb-1" style="color: var(--color-text)">
                   Owner Verified
                 </h3>
+                
                 <p class="text-xs leading-relaxed" style="color: var(--color-text-dim)">
                   Poster must accept your location request before reveal.
                 </p>
               </div>
             </div>
+            
             <div class="glass-panel rounded-xl p-4 flex items-start gap-3 hover:scale-[1.02] transition-transform cursor-default">
               <div
                 class="w-10 h-10 rounded-lg flex items-center justify-center shrink-0"
@@ -1009,17 +1019,19 @@ defmodule HomeWeb.Text.Test do
                   />
                 </svg>
               </div>
+              
               <div>
                 <h3 class="text-sm font-bold font-mono mb-1" style="color: var(--color-text)">
                   Join the Community
                 </h3>
+                
                 <p class="text-xs leading-relaxed" style="color: var(--color-text-dim)">
                   2,400+ members already hunting in your area.
                 </p>
               </div>
             </div>
           </div>
-
+          
           <div class="flex flex-col items-center gap-2 animate-bounce-slow">
             <span
               class="text-[10px] font-mono tracking-[0.2em] uppercase"
@@ -1044,16 +1056,14 @@ defmodule HomeWeb.Text.Test do
           </div>
         </div>
       </div>
-      
-    <!-- HOUSE CARDS -->
+      <!-- HOUSE CARDS -->
       <%= if @view_mode == :feed do %>
         {render_small_cards(assigns)}
       <% else %>
         <%= for {house, index} <- Enum.with_index(@houses) do %>
-          <% room_idx = Map.get(@active_carousel, house.id, 0) %>
-          <% current_room = Enum.at(house.rooms, room_idx) %>
-          <% carousel_direction = Map.get(@carousel_direction, house.id, :next) %>
-          <% inactive_slide_offset =
+          <% room_idx = Map.get(@active_carousel, house.id, 0) %> <% current_room =
+            Enum.at(house.rooms, room_idx) %> <% carousel_direction =
+            Map.get(@carousel_direction, house.id, :next) %> <% inactive_slide_offset =
             if carousel_direction == :next, do: "translate-x-8", else: "-translate-x-8" %>
           <div
             class={[
@@ -1063,8 +1073,7 @@ defmodule HomeWeb.Text.Test do
             data-index={index + 1}
             data-house-id={house.id}
           >
-            
-    <!-- Blurred background from first room image -->
+            <!-- Blurred background from first room image -->
             <div class="absolute inset-0 z-0 overflow-hidden">
               <img
                 src={List.first(house.rooms).image}
@@ -1074,9 +1083,10 @@ defmodule HomeWeb.Text.Test do
               />
               <div class="absolute inset-0 bg-linear-to-t from-black/80 via-black/30 to-black/50">
               </div>
+              
               <div class="absolute inset-0 color-veil"></div>
             </div>
-
+            
             <%= if index < 4 do %>
               <!-- Desktop: Split View -->
               <div class="absolute inset-x-0 top-28 bottom-24 z-10 hidden  items-stretch justify-center gap-8 px-10 md:flex">
@@ -1093,7 +1103,9 @@ defmodule HomeWeb.Text.Test do
                       class={"absolute inset-0 w-full h-full object-cover transition-[opacity,transform] duration-500 ease-out #{if ridx == room_idx, do: "opacity-100 translate-x-0 scale-100", else: "pointer-events-none opacity-0 #{inactive_slide_offset} scale-[1.03]"}"}
                     />
                   <% end %>
+                  
                   <div class="absolute inset-0 bg-linear-to-t from-black/60 to-transparent"></div>
+                  
                   <button
                     id={"open-gallery-#{house.id}"}
                     phx-click="open_gallery"
@@ -1117,8 +1129,7 @@ defmodule HomeWeb.Text.Test do
                       />
                     </svg>
                   </button>
-                  
-    <!-- Carousel Controls -->
+                  <!-- Carousel Controls -->
                   <button
                     phx-click="carousel_prev"
                     phx-value-house={house.id}
@@ -1147,8 +1158,7 @@ defmodule HomeWeb.Text.Test do
                       />
                     </svg>
                   </button>
-                  
-    <!-- Dots -->
+                  <!-- Dots -->
                   <div class="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-1.5">
                     <%= for {_room, ridx} <- Enum.with_index(house.rooms) do %>
                       <div
@@ -1158,8 +1168,7 @@ defmodule HomeWeb.Text.Test do
                       </div>
                     <% end %>
                   </div>
-                  
-    <!-- Room Badge -->
+                  <!-- Room Badge -->
                   <div
                     id={"room-badge-desktop-#{house.id}-#{room_idx}"}
                     class="room-copy-enter absolute top-4 left-4 px-3 py-1 rounded-full text-[10px] font-bold font-mono uppercase tracking-wider border glass-panel"
@@ -1167,6 +1176,7 @@ defmodule HomeWeb.Text.Test do
                   >
                     {current_room.name}
                   </div>
+                  
                   <div
                     id={"room-note-desktop-#{house.id}-#{room_idx}"}
                     class="room-copy-enter absolute bottom-5 left-5 right-5 rounded-2xl border p-4 shadow-2xl note-overlay-card"
@@ -1177,13 +1187,11 @@ defmodule HomeWeb.Text.Test do
                     >
                       {current_room.name}
                     </p>
-                    <p class="text-sm leading-relaxed" style="color: white">
-                      {current_room.note}
-                    </p>
+                    
+                    <p class="text-sm leading-relaxed" style="color: white">{current_room.note}</p>
                   </div>
                 </div>
-                
-    <!-- Right: Details Panel -->
+                <!-- Right: Details Panel -->
                 <div class="flex w-[34%] max-w-md flex-col justify-center glass-panel rounded-3xl p-6 pointer-events-auto">
                   <div class="mb-5">
                     <div>
@@ -1193,12 +1201,13 @@ defmodule HomeWeb.Text.Test do
                       >
                         {house.address}
                       </h2>
+                      
                       <p class="text-sm mt-1 font-mono" style="color: var(--color-text-dim)">
                         {house.city}
                       </p>
                     </div>
                   </div>
-
+                  
                   <div
                     class="flex items-center gap-5 mb-5 text-xs font-mono"
                     style="color: var(--color-text-dim)"
@@ -1211,8 +1220,7 @@ defmodule HomeWeb.Text.Test do
                           stroke-width="2"
                           d="M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2h-5l-5 5v5H5v-5a2 2 0 012-2h10a2 2 0 012 2v5"
                         />
-                      </svg>
-                      {house.beds} BD
+                      </svg> {house.beds} BD
                     </span>
                     <span class="flex items-center gap-1.5">
                       <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1222,8 +1230,7 @@ defmodule HomeWeb.Text.Test do
                           stroke-width="2"
                           d="M12 6v6m0 0v6m0-6h6m-6 0H6"
                         />
-                      </svg>
-                      {house.baths} BA
+                      </svg> {house.baths} BA
                     </span>
                     <span class="flex items-center gap-1.5">
                       <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1233,11 +1240,10 @@ defmodule HomeWeb.Text.Test do
                           stroke-width="2"
                           d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"
                         />
-                      </svg>
-                      {house.sqft} SF
+                      </svg> {house.sqft} SF
                     </span>
                   </div>
-
+                  
                   <div class="text-center mb-4 cursor-pointer group" phx-click="open_modal">
                     <div
                       class="inline-flex items-center gap-2 px-4 py-2 rounded-xl border transition-colors"
@@ -1263,6 +1269,7 @@ defmodule HomeWeb.Text.Test do
                         />
                       </svg>
                     </div>
+                    
                     <p
                       class="text-[10px] uppercase tracking-widest mt-2 opacity-30"
                       style="color: var(--color-text-dim)"
@@ -1270,7 +1277,7 @@ defmodule HomeWeb.Text.Test do
                       Tap to unlock price
                     </p>
                   </div>
-
+                  
                   <div class="flex gap-3">
                     <button
                       phx-click="open_modal"
@@ -1305,8 +1312,7 @@ defmodule HomeWeb.Text.Test do
                   </div>
                 </div>
               </div>
-              
-    <!-- Mobile: Stacked Card -->
+              <!-- Mobile: Stacked Card -->
               <div class="absolute inset-x-0 top-28 bottom-24 z-10 flex items-stretch p-4 pointer-events-none md:hidden">
                 <div class="glass-panel mx-auto flex h-full w-full max-w-md flex-col overflow-hidden rounded-3xl pointer-events-auto">
                   <!-- Carousel -->
@@ -1321,7 +1327,9 @@ defmodule HomeWeb.Text.Test do
                         class={"absolute inset-0 w-full h-full object-cover transition-[opacity,transform] duration-500 ease-out #{if ridx == room_idx, do: "opacity-100 translate-x-0 scale-100", else: "pointer-events-none opacity-0 #{inactive_slide_offset} scale-[1.03]"}"}
                       />
                     <% end %>
+                    
                     <div class="absolute inset-0 bg-linear-to-t from-black/60 to-transparent"></div>
+                    
                     <button
                       id={"open-gallery-mobile-#{house.id}"}
                       phx-click="open_gallery"
@@ -1345,7 +1353,6 @@ defmodule HomeWeb.Text.Test do
                         />
                       </svg>
                     </button>
-
                     <button
                       phx-click="carousel_prev"
                       phx-value-house={house.id}
@@ -1374,7 +1381,6 @@ defmodule HomeWeb.Text.Test do
                         />
                       </svg>
                     </button>
-
                     <div class="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5">
                       <%= for {_room, ridx} <- Enum.with_index(house.rooms) do %>
                         <div
@@ -1384,7 +1390,7 @@ defmodule HomeWeb.Text.Test do
                         </div>
                       <% end %>
                     </div>
-
+                    
                     <div
                       id={"room-badge-mobile-#{house.id}-#{room_idx}"}
                       class="room-copy-enter absolute top-3 left-3 px-2.5 py-0.5 rounded-full text-[9px] font-bold font-mono uppercase tracking-wider border glass-panel"
@@ -1392,6 +1398,7 @@ defmodule HomeWeb.Text.Test do
                     >
                       {current_room.name}
                     </div>
+                    
                     <div
                       id={"room-note-mobile-#{house.id}-#{room_idx}"}
                       class="room-copy-enter absolute bottom-8 left-3 right-3 rounded-2xl border p-3 shadow-2xl note-overlay-card"
@@ -1402,13 +1409,11 @@ defmodule HomeWeb.Text.Test do
                       >
                         {current_room.name}
                       </p>
-                      <p class="text-xs leading-relaxed" style="color: white">
-                        {current_room.note}
-                      </p>
+                      
+                      <p class="text-xs leading-relaxed" style="color: white">{current_room.note}</p>
                     </div>
                   </div>
-                  
-    i    <!-- Info -->
+                  i    <!-- Info -->
                   <div class="shrink-0 p-4">
                     <div class="mb-3">
                       <div>
@@ -1418,12 +1423,13 @@ defmodule HomeWeb.Text.Test do
                         >
                           {house.address}
                         </h2>
+                        
                         <p class="text-xs mt-0.5 font-mono" style="color: var(--color-text-dim)">
                           {house.city}
                         </p>
                       </div>
                     </div>
-
+                    
                     <div
                       class="flex items-center gap-4 mb-3 text-[10px] font-mono"
                       style="color: var(--color-text-dim)"
@@ -1453,7 +1459,7 @@ defmodule HomeWeb.Text.Test do
                           /></svg>{house.sqft} SF
                       </span>
                     </div>
-
+                    
                     <div class="text-center mb-3 cursor-pointer" phx-click="open_modal">
                       <div
                         class="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border"
@@ -1479,6 +1485,7 @@ defmodule HomeWeb.Text.Test do
                           />
                         </svg>
                       </div>
+                      
                       <p
                         class="text-[9px] uppercase tracking-widest mt-1 opacity-30"
                         style="color: var(--color-text-dim)"
@@ -1486,7 +1493,7 @@ defmodule HomeWeb.Text.Test do
                         Tap to unlock
                       </p>
                     </div>
-
+                    
                     <div class="flex gap-2">
                       <button
                         phx-click="open_modal"
@@ -1523,7 +1530,7 @@ defmodule HomeWeb.Text.Test do
                 </div>
               </div>
             <% end %>
-
+            
             <%= if index == 4 do %>
               <div class="absolute inset-0 z-30 flex items-center justify-center p-6 paywall-slide">
                 <div
@@ -1531,6 +1538,7 @@ defmodule HomeWeb.Text.Test do
                   style="background: color-mix(in srgb, var(--color-bg) 60%, transparent);"
                 >
                 </div>
+                
                 <div class="relative glass-panel rounded-3xl p-8 md:p-10 max-w-md w-full text-center border shadow-2xl float-anim">
                   <div
                     class="w-16 h-16 rounded-full mx-auto mb-5 flex items-center justify-center border"
@@ -1551,18 +1559,21 @@ defmodule HomeWeb.Text.Test do
                       />
                     </svg>
                   </div>
+                  
                   <h3
                     class="text-2xl md:text-3xl font-bold font-mono mb-2"
                     style="color: var(--color-text)"
                   >
                     12 more homes hidden
                   </h3>
+                  
                   <p
                     class="text-sm md:text-base mb-8 leading-relaxed"
                     style="color: var(--color-text-dim)"
                   >
                     Create a free account to unlock prices, contact owners directly, and save your favorite properties.
                   </p>
+                  
                   <button
                     phx-click="open_modal"
                     class="w-full py-4 rounded-xl font-bold text-sm md:text-base text-white transition-all hover:scale-[1.02] active:scale-95"
@@ -1576,7 +1587,7 @@ defmodule HomeWeb.Text.Test do
                 </div>
               </div>
             <% end %>
-
+            
             <%= if index > 4 do %>
               <div class="absolute inset-0 z-20 flex items-center justify-center">
                 <span
@@ -1817,6 +1828,7 @@ defmodule HomeWeb.Text.Test do
   def render_help(assigns) do
     ~H"""
     <div class="fixed inset-0 grid-bg pointer-events-none z-0"></div>
+
     <div class={[
       "fixed inset-0 pointer-events-none z-0",
       if(@theme == "dark", do: "scanlines", else: "")
@@ -1847,6 +1859,7 @@ defmodule HomeWeb.Text.Test do
             >
               Help
             </p>
+            
             <h1
               class="text-2xl md:text-4xl font-bold font-mono leading-tight"
               style="color: var(--color-text)"
@@ -1854,6 +1867,7 @@ defmodule HomeWeb.Text.Test do
               How HOME keeps property discovery private.
             </h1>
           </div>
+          
           <button
             id="help-back-button"
             phx-click="set_view"
@@ -1864,31 +1878,36 @@ defmodule HomeWeb.Text.Test do
             Back
           </button>
         </div>
-
+        
         <div class="grid gap-3 md:grid-cols-3">
           <div
             class="rounded-2xl border p-4"
             style="border-color: var(--glass-border); background: color-mix(in srgb, var(--color-bg) 76%, transparent);"
           >
             <h2 class="text-sm font-bold font-mono mb-2" style="color: var(--color-text)">Unlock</h2>
+            
             <p class="text-xs leading-relaxed" style="color: var(--color-text-dim)">
               Tap a hidden price or action to create an account and request access.
             </p>
           </div>
+          
           <div
             class="rounded-2xl border p-4"
             style="border-color: var(--glass-border); background: color-mix(in srgb, var(--color-bg) 76%, transparent);"
           >
             <h2 class="text-sm font-bold font-mono mb-2" style="color: var(--color-text)">Verify</h2>
+            
             <p class="text-xs leading-relaxed" style="color: var(--color-text-dim)">
               Owners approve requests before exact addresses and direct contacts are shared.
             </p>
           </div>
+          
           <div
             class="rounded-2xl border p-4"
             style="border-color: var(--glass-border); background: color-mix(in srgb, var(--color-bg) 76%, transparent);"
           >
             <h2 class="text-sm font-bold font-mono mb-2" style="color: var(--color-text)">Save</h2>
+            
             <p class="text-xs leading-relaxed" style="color: var(--color-text-dim)">
               Keep promising homes on your board and compare them when you are ready.
             </p>

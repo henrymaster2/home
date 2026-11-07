@@ -4,7 +4,32 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="csrf-token" content={get_csrf_token()} />
-
+    <meta
+      name="description"
+      content="Discover homes to rent, buy, and book for short stays with HOME. Browse property listings and find your next place."
+    /> <meta property="og:type" content="website" />
+    <meta property="og:url" content={url(~p"/")} />
+    <meta property="og:title" content="HOME | Find your next home" />
+    <meta
+      property="og:description"
+      content="Discover homes to rent, buy, and book for short stays with HOME. Browse property listings and find your next place."
+    />
+    <meta
+      property="og:image"
+      content="https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=1200&h=630&q=85"
+    /> <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="A modern home with a landscaped front yard" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="HOME | Find your next home" />
+    <meta
+      name="twitter:description"
+      content="Discover homes to rent, buy, and book for short stays with HOME. Browse property listings and find your next place."
+    />
+    <meta
+      name="twitter:image"
+      content="https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=1200&h=630&q=85"
+    />
     <script>
       (() => {
         const theme = localStorage.getItem("theme") || "dark"
@@ -17,12 +42,8 @@
       })()
     </script>
 
-    <.live_title default="Home" suffix=" · Phoenix Framework">
-      {assigns[:page_title]}
-    </.live_title>
-
+    <.live_title default="HOME | Find your next home">{assigns[:page_title]}</.live_title>
     <link phx-track-static rel="stylesheet" href={~p"/assets/css/app.css"} />
-
     <script defer phx-track-static type="text/javascript" src={~p"/assets/js/app.js"}>
     </script>
 
@@ -53,12 +74,9 @@
         );
       })();
     </script>
-
-    <link rel="manifest" href="/manifest.json" />
-    <meta name="theme-color" content="#0f172a" />
+    <link rel="manifest" href="/manifest.json" /> <meta name="theme-color" content="#0f172a" />
     <link rel="apple-touch-icon" href="/images/icon-192.png" />
   </head>
-  <body>
-    {@inner_content}
-  </body>
+
+  <body>{@inner_content}</body>
 </html>
